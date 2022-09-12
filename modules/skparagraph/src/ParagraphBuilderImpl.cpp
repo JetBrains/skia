@@ -112,6 +112,7 @@ ParagraphBuilderImpl::~ParagraphBuilderImpl() = default;
 
 void ParagraphBuilderImpl::pushStyle(const TextStyle& style) {
     fTextStyles.push_back(style);
+    fTextStyles.back().setFontRastrSettings(fParagraphStyle.getFontRastrSettings());
     if (!fStyledBlocks.empty() && fStyledBlocks.back().fRange.end == fUtf8.size() &&
         fStyledBlocks.back().fStyle == style) {
         // Just continue with the same style

@@ -12,6 +12,7 @@
 #include "include/core/SkScalar.h"
 #include "modules/skparagraph/include/DartTypes.h"
 #include "modules/skparagraph/include/FontArguments.h"
+#include "modules/skparagraph/include/FontRastrSettings.h"
 #include "modules/skparagraph/include/ParagraphPainter.h"
 #include "modules/skparagraph/include/TextShadow.h"
 
@@ -276,6 +277,9 @@ public:
     sk_sp<SkTypeface> refTypeface() const { return fTypeface; }
     void setTypeface(sk_sp<SkTypeface> typeface) { fTypeface = std::move(typeface); }
 
+    const FontRastrSettings& getFontRastrSettings() const { return fFontRastrSettings; }
+    void setFontRastrSettings(FontRastrSettings fontRastrSettings) { fFontRastrSettings = fontRastrSettings; }
+
     SkString getLocale() const { return fLocale; }
     void setLocale(const SkString& locale) { fLocale = locale; }
 
@@ -327,6 +331,7 @@ private:
 
     sk_sp<SkTypeface> fTypeface;
     bool fIsPlaceholder = false;
+    FontRastrSettings fFontRastrSettings;
 
     std::vector<FontFeature> fFontFeatures;
 

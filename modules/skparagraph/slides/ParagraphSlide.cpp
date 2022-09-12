@@ -11,6 +11,7 @@
 #include "include/core/SkTypeface.h"
 #include "include/effects/SkGradientShader.h"
 #include "modules/skparagraph/include/Paragraph.h"
+#include "modules/skparagraph/include/ParagraphStyle.h"
 #include "modules/skparagraph/include/TypefaceFontProvider.h"
 #include "modules/skparagraph/src/ParagraphBuilderImpl.h"
 #include "modules/skparagraph/src/ParagraphImpl.h"
@@ -3594,6 +3595,64 @@ public:
     }
 };
 
+class ParagraphSlide69 : public ParagraphSlide_Base {
+public:
+  ParagraphSlide69() { fName = "Paragraph69"; }
+
+  void draw(SkCanvas* canvas) override {
+    canvas->drawColor(SK_ColorWHITE);
+
+    auto fontCollection =
+        sk_make_sp<TestFontCollection>(GetResourcePath("fonts").c_str(), false, true);
+
+    auto paragraph1 = paragraphWithRastrSettings(fontCollection, "Lorien Ipsum [kAntiAlias, SkFontHinting::kSlight, subpixel: true] [default]",
+                                                 SkFont::Edging::kAntiAlias,
+                                                 SkFontHinting::kSlight,
+                                                 true);
+
+    auto paragraph2 = paragraphWithRastrSettings(fontCollection, "Lorien Ipsum [kSubpixelAntiAlias, SkFontHinting::kFull, subpixel: true]",
+                                                 SkFont::Edging::kSubpixelAntiAlias,
+                                                 SkFontHinting::kFull,
+                                                 true);
+
+    auto paragraph3 = paragraphWithRastrSettings(fontCollection, "Lorien Ipsum [kSubpixelAntiAlias, SkFontHinting::kFull, subpixel: false]",
+                                                 SkFont::Edging::kSubpixelAntiAlias,
+                                                 SkFontHinting::kFull,
+                                                 false);
+
+    paragraph1->layout(600);
+    paragraph1->paint(canvas, 0, 0);
+    paragraph2->layout(600);
+    paragraph2->paint(canvas, 0, 40);
+    paragraph3->layout(600);
+    paragraph3->paint(canvas, 0, 80);
+  }
+
+protected:
+  std::unique_ptr<Paragraph> paragraphWithRastrSettings(sk_sp<FontCollection> fontCollection,
+                                                        const char* text,
+                                                        SkFont::Edging edging,
+                                                        SkFontHinting hinting,
+                                                        bool subpixel) {
+    FontRastrSettings fontRastrSettings;
+    fontRastrSettings.fEdging = edging;
+    fontRastrSettings.fHinting = hinting;
+    fontRastrSettings.fSubpixel = subpixel;
+
+
+    ParagraphStyle paragraph_style;
+    paragraph_style.setFontRastrSettings(fontRastrSettings);
+    TextStyle textStyle;
+    textStyle.setFontFamilies({SkString("Roboto")});
+    textStyle.setFontSize(14.0);
+    textStyle.setColor(SK_ColorBLACK);
+    ParagraphBuilderImpl builder(paragraph_style, fontCollection);
+    builder.pushStyle(textStyle);
+    builder.addText(text);
+    return builder.Build();
+  }
+};
+
 // Google logo is shown in one style (the first one)
 class ParagraphSlide_MultiStyle_Logo : public ParagraphSlide_Base {
 public:
@@ -4506,6 +4565,7 @@ DEF_SLIDE(return new ParagraphSlide64();)
 DEF_SLIDE(return new ParagraphSlide66();)
 DEF_SLIDE(return new ParagraphSlide67();)
 DEF_SLIDE(return new ParagraphSlide68();)
+DEF_SLIDE(return new ParagraphSlide69();)
 DEF_SLIDE(return new ParagraphSlide_MultiStyle_Logo();)
 DEF_SLIDE(return new ParagraphSlide_MultiStyle_FFI();)
 DEF_SLIDE(return new ParagraphSlide_MultiStyle_EmojiFamily();)
