@@ -176,6 +176,7 @@ public:
                                                   size_t startClip,
                                                   size_t endClip,
                                                   SkVector offset,
+                                                  SkScalar indent,
                                                   SkVector advance,
                                                   InternalLineMetrics metrics,
                                                   bool addEllipsis)>;

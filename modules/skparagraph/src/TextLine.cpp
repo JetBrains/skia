@@ -92,6 +92,7 @@ int compareRound(SkScalar a, SkScalar b, bool applyRoundingHack) {
 
 TextLine::TextLine(ParagraphImpl* owner,
                    SkVector offset,
+                   SkScalar indent,
                    SkVector advance,
                    BlockRange blocks,
                    TextRange textExcludingSpaces,
@@ -112,6 +113,7 @@ TextLine::TextLine(ParagraphImpl* owner,
         , fAdvance(advance)
         , fOffset(offset)
         , fShift(0.0)
+        , fIndent(indent)
         , fWidthWithSpaces(widthWithSpaces)
         , fEllipsis(nullptr)
         , fSizes(sizes)
@@ -296,23 +298,29 @@ void TextLine::ensureTextBlobCachePopulated() {
 }
 
 void TextLine::format(TextAlign align, SkScalar maxWidth) {
-    SkScalar delta = maxWidth - this->width();
+    SkScalar delta = maxWidth - this->width() - fIndent;
     if (delta <= 0) {
         return;
     }
 
-    // We do nothing for left align
+    bool isRtl = fOwner->paragraphStyle().getTextDirection() == TextDirection::kRtl;
     if (align == TextAlign::kJustify) {
         if (!this->endsWithHardLineBreak()) {
-            this->justify(maxWidth);
-        } else if (fOwner->paragraphStyle().getTextDirection() == TextDirection::kRtl) {
+            this->justify(maxWidth - fIndent);
+            fShift = (isRtl ? 0 : fIndent);
+        } else if (isRtl) {
             // Justify -> Right align
             fShift = delta;
+        } else {
+            // Justify -> Left align
+            fShift = fIndent;
         }
     } else if (align == TextAlign::kRight) {
         fShift = delta;
     } else if (align == TextAlign::kCenter) {
-        fShift = delta / 2;
+        fShift = delta / 2 + (isRtl ? 0 : fIndent);
+    } else if (align == TextAlign::kLeft) {
+        fShift = fIndent;
     }
 }
 
