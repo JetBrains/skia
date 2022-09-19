@@ -161,6 +161,19 @@ char* SkStrAppendS64(char string[], int64_t dec, int minDigits) {
     return SkStrAppendU64(string, udec, minDigits);
 }
 
+#include <locale.h>
+
+#if defined(SK_BUILD_FOR_MAC) || defined(SK_BUILD_FOR_IOS)
+#include <xlocale.h>
+#include <cstring>
+#endif
+
+#if defined(SK_BUILD_FOR_WIN)
+  static const _locale_t kDefaultLocale = _create_locale(LC_ALL, "C");
+#else
+  static const locale_t kDefaultLocale = newlocale(LC_ALL_MASK, "C", nullptr);
+#endif
+
 char* SkStrAppendScalar(char string[], SkScalar value) {
     // Handle infinity and NaN ourselves to ensure consistent cross-platform results.
     // (e.g.: `inf` versus `1.#INF00`, `nan` versus `-nan` for high-bit-set NaNs)
@@ -182,7 +195,18 @@ char* SkStrAppendScalar(char string[], SkScalar value) {
     static const char gFormat[] = "%.8g";
     // make it 1 larger for the terminating 0
     char buffer[kSkStrAppendScalar_MaxSize + 1];
-    int len = snprintf(buffer, sizeof(buffer), gFormat, value);
+
+    #if defined(SK_BUILD_FOR_WIN)
+        int len = _snprintf_l(buffer, sizeof(buffer), gFormat, kDefaultLocale, value);
+    #elif defined(SK_BUILD_FOR_MAC) || defined(SK_BUILD_FOR_IOS)
+        int len = snprintf_l(buffer, sizeof(buffer), kDefaultLocale, gFormat, value);
+    #else
+        locale_t original = uselocale(kDefaultLocale);
+        int len = snprintf(buffer, sizeof(buffer), gFormat, value);
+        uselocale(original);
+    #endif
+
+
     memcpy(string, buffer, len);
     SkASSERT(len <= kSkStrAppendScalar_MaxSize);
     return string + len;
