@@ -301,9 +301,11 @@ void TextWrapper::breakTextIntoLines(ParagraphImpl* parent,
     auto start = span.begin();
     InternalLineMetrics maxRunMetrics;
     bool needEllipsis = false;
+    TextIndent indent = parent->paragraphStyle().getTextIndent();
+    SkScalar lineIndent = indent.getFirstLine();
     while (fEndLine.endCluster() != end) {
 
-        this->lookAhead(maxWidth, end, parent->getApplyRoundingHack());
+        this->lookAhead(maxWidth  - lineIndent, end, parent->getApplyRoundingHack());
 
         auto lastLine = (hasEllipsis && unlimitedLines) || fLineNumber >= maxLines;
         needEllipsis = hasEllipsis && !endlessLine && lastLine;
@@ -393,6 +395,7 @@ void TextWrapper::breakTextIntoLines(ParagraphImpl* parent,
                 fEndLine.startPos(),
                 fEndLine.endPos(),
                 SkVector::Make(0, fHeight),
+                lineIndent,
                 SkVector::Make(fEndLine.width(), lineHeight),
                 fEndLine.metrics(),
                 needEllipsis && !fHardLineBreak);
@@ -422,6 +425,8 @@ void TextWrapper::breakTextIntoLines(ParagraphImpl* parent,
             fHardLineBreak = false;
             break;
         }
+
+        lineIndent = indent.getRestLine();
 
         ++fLineNumber;
     }
@@ -494,6 +499,7 @@ void TextWrapper::breakTextIntoLines(ParagraphImpl* parent,
                 0,
                 0,
                 SkVector::Make(0, fHeight),
+                lineIndent,
                 SkVector::Make(0, fEndLine.metrics().height()),
                 fEndLine.metrics(),
                 needEllipsis);

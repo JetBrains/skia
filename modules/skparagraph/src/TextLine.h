@@ -54,6 +54,7 @@ public:
 
     TextLine(ParagraphImpl* owner,
              SkVector offset,
+             SkScalar indent,
              SkVector advance,
              BlockRange blocks,
              TextRange textExcludingSpaces,
@@ -180,6 +181,7 @@ private:
     SkVector fAdvance;                  // Text size
     SkVector fOffset;                   // Text position
     SkScalar fShift;                    // Let right
+    SkScalar fIndent;                   // Text indent
     SkScalar fWidthWithSpaces;
     std::unique_ptr<Run> fEllipsis;     // In case the line ends with the ellipsis
     InternalLineMetrics fSizes;                 // Line metrics as a max of all run metrics and struts
