@@ -19,6 +19,11 @@ StrutStyle::StrutStyle() {
     fEnabled = false;
 }
 
+TextIndent::TextIndent() {
+    fFirstLine = 0.0;
+    fRestLine = 0.0;
+}
+
 ParagraphStyle::ParagraphStyle() {
     fTextAlign = TextAlign::kStart;
     fTextDirection = TextDirection::kLtr;

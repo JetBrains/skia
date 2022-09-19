@@ -624,7 +624,9 @@ void ParagraphImpl::breakShapedTextIntoLines(SkScalar maxWidth) {
         advance.fY = metrics.height();
         auto clusterRange = ClusterRange(0, trailingSpaces);
         auto clusterRangeWithGhosts = ClusterRange(0, this->clusters().size() - 1);
-        this->addLine(SkPoint::Make(0, 0), advance,
+        TextIndent indent = this->paragraphStyle().getTextIndent();
+        SkScalar lineIndent = indent.getFirstLine();
+        this->addLine(SkPoint::Make(0, 0), lineIndent, advance,
                       textExcludingSpaces, textRange, textRange,
                       clusterRange, clusterRangeWithGhosts, run.advance().x(),
                       metrics);
@@ -653,11 +655,12 @@ void ParagraphImpl::breakShapedTextIntoLines(SkScalar maxWidth) {
                 size_t startPos,
                 size_t endPos,
                 SkVector offset,
+                SkScalar indent,
                 SkVector advance,
                 InternalLineMetrics metrics,
                 bool addEllipsis) {
                 // TODO: Take in account clipped edges
-                auto& line = this->addLine(offset, advance, textExcludingSpaces, text, textWithNewlines, clusters, clustersWithGhosts, widthWithSpaces, metrics);
+                auto& line = this->addLine(offset, indent, advance, textExcludingSpaces, text, textWithNewlines, clusters, clustersWithGhosts, widthWithSpaces, metrics);
                 if (addEllipsis) {
                     line.createEllipsis(maxWidth, this->getEllipsis(), true);
                 }
@@ -767,6 +770,7 @@ BlockRange ParagraphImpl::findAllBlocks(TextRange textRange) {
 }
 
 TextLine& ParagraphImpl::addLine(SkVector offset,
+                                 SkScalar indent,
                                  SkVector advance,
                                  TextRange textExcludingSpaces,
                                  TextRange text,
@@ -777,7 +781,7 @@ TextLine& ParagraphImpl::addLine(SkVector offset,
                                  InternalLineMetrics sizes) {
     // Define a list of styles that covers the line
     auto blocks = findAllBlocks(textExcludingSpaces);
-    return fLines.emplace_back(this, offset, advance, blocks,
+    return fLines.emplace_back(this, offset, indent, advance, blocks,
                                textExcludingSpaces, text, textIncludingNewLines,
                                clusters, clustersWithGhosts, widthWithSpaces, sizes);
 }
