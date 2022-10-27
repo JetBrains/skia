@@ -1395,10 +1395,19 @@ PositionWithAffinity TextLine::getGlyphPositionAtCoordinate(SkScalar dx) {
         return { SkToS32(utf16Index) , kDownstream };
     }
 
+    auto lineTextRange = this->textWithNewlines();
     PositionWithAffinity result(0, Affinity::kDownstream);
     this->iterateThroughVisualRuns(true,
-        [this, dx, &result]
+        [this, dx, &result, lineTextRange]
         (const Run* run, SkScalar runOffsetInLine, TextRange textRange, SkScalar* runWidthInLine) {
+            auto intersection = lineTextRange.intersection(textRange);
+            if (textRange.width() == 2 && intersection == textRange && lineTextRange.end == textRange.end) {
+                auto text = fOwner->text(textRange);
+                if (text[0] == 13 && text[1] == 10) { // CR/LF
+                    SkASSERT(result.position != 0);
+                    return false; // stop looking, take the last saved `result`
+                }
+            }
             bool keepLooking = true;
             *runWidthInLine = this->iterateThroughSingleRunByStyles(
             TextAdjustment::GraphemeGluster, run, runOffsetInLine, textRange, StyleType::kNone,
