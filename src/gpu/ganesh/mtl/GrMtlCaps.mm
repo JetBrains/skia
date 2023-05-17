@@ -102,7 +102,7 @@ bool GrMtlCaps::getGPUFamilyFromFeatureSet(id<MTLDevice> device,
             return true;
         }
     }
-#elif defined(SK_BUILD_FOR_IOS)
+#elif defined(SK_BUILD_FOR_IOS) || !defined(SK_BUILD_FOR_TVOS)
     // TODO: support tvOS
    *gpuFamily = GPUFamily::kApple;
     // iOS 12
