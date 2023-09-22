@@ -129,7 +129,7 @@ void Decorations::calculateGaps(const TextLine::ClipContext& context, const SkRe
             path.lineTo(end, rect.fTop).moveTo(start, rect.fTop);
         }
     }
-    if (!intersections.empty() && (rect.fRight - start > halo)) {
+    if (rect.fRight - start > halo) {
         path.lineTo(rect.fRight, rect.fTop);
     }
     fPath = path.detach();
