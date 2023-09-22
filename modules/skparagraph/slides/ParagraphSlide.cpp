@@ -2444,6 +2444,7 @@ public:
         text_style.setDecorationColor(SK_ColorGREEN);
         builder.pushStyle(text_style);
         builder.addText("Solid underline: {rqrqr}\n");
+        builder.addText("Solid underline: {}\n");
 
         text_style.setDecorationStyle(TextDecorationStyle::kDashed);
         text_style.setDecorationColor(SK_ColorMAGENTA);
