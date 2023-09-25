@@ -13,41 +13,40 @@
 
 #include <cstdio>
 #include <cstring>
+#include <iostream>
 #include <mutex>
 #include <string>
+#include <sstream>
 
 #include "unicode/udata.h"
 
-static void* win_mmap(const wchar_t* dataFile) {
-    if (!dataFile) {
-        return nullptr;
-    }
+static void* win_mmap(const std::wstring& dataFile, std::wostringstream& buffer) {
     struct FCloseWrapper { void operator()(FILE* f) { fclose(f); } };
-    std::unique_ptr<FILE, FCloseWrapper> stream(_wfopen(dataFile, L"rb"));
+    std::unique_ptr<FILE, FCloseWrapper> stream(_wfopen(dataFile.c_str(), L"rb"));
     if (!stream) {
-        fprintf(stderr, "SkIcuLoader: datafile missing: %ls.\n", dataFile);
+        buffer << L"SkLoadICU: datafile '" << dataFile << L"' is missing" << std::endl;
         return nullptr;
     }
     int fileno = _fileno(stream.get());
     if (fileno < 0) {
-        fprintf(stderr, "SkIcuLoader: datafile fileno error.\n");
+        buffer << L"SkLoadICU: datafile '" << dataFile << L"' fileno error " << fileno << std::endl;
         return nullptr;
     }
     HANDLE file = (HANDLE)_get_osfhandle(fileno);
     if ((HANDLE)INVALID_HANDLE_VALUE == file) {
-        fprintf(stderr, "SkIcuLoader: datafile handle error.\n");
+        buffer << L"SkLoadICU: datafile '" << dataFile << L"' handle error" << std::endl;
         return nullptr;
     }
     struct CloseHandleWrapper { void operator()(HANDLE h) { CloseHandle(h); } };
     std::unique_ptr<void, CloseHandleWrapper> mmapHandle(
         CreateFileMapping(file, nullptr, PAGE_READONLY, 0, 0, nullptr));
     if (!mmapHandle) {
-        fprintf(stderr, "SkIcuLoader: datafile mmap error.\n");
+        buffer << L"SkLoadICU: datafile '" << dataFile << L"' mmap error" << std::endl;
         return nullptr;
     }
     void* addr = MapViewOfFile(mmapHandle.get(), FILE_MAP_READ, 0, 0, 0);
     if (nullptr == addr) {
-        fprintf(stderr, "SkIcuLoader: datafile view error.\n");
+        buffer << L"SkLoadICU: datafile '" << dataFile << L"' view error" << std::endl;
         return nullptr;
     }
     return addr;
@@ -99,23 +98,20 @@ static std::wstring executable_directory() {
     return get_module_path(hModule);
 }
 
-static bool load_from(const std::wstring& dir) {
-    auto sPath = dir + L"\\icudtl.dat";
-    if (void* addr = win_mmap(sPath.c_str())) {
-        if (init_icu(addr)) {
-            return true;
-        }
-    }
-    return false;
-}
-
 bool SkLoadICU() {
-    static bool good = false;
+    static bool loaded = false;
     static std::once_flag flag;
     std::call_once(flag, []() {
-        good = load_from(executable_directory()) || load_from(library_directory());
+        std::wostringstream buffer;
+        void* addr = win_mmap(library_directory() + L"\\icudtl.dat", buffer);
+        if (addr == nullptr)
+            addr = win_mmap(executable_directory() + L"\\icudtl.dat", buffer);
+        if (addr == nullptr)
+            std::wcerr << buffer.str() << std::endl;
+        if (addr)
+            loaded = init_icu(addr);
     });
-    return good;
+    return loaded;
 }
 
 #endif  // defined(_WIN32) && defined(SK_USING_THIRD_PARTY_ICU)
