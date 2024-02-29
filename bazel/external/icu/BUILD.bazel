@@ -1053,8 +1053,11 @@ cc_library(
     ],
     defines = [
         "SK_USING_THIRD_PARTY_ICU",
-        "U_DISABLE_RENAMING=1",
+        "U_DISABLE_RENAMING=0",
         "U_USING_ICU_NAMESPACE=0",
+        "U_HAVE_LIB_SUFFIX=1",
+        "U_DISABLE_VERSION_SUFFIX=1",
+        "U_LIB_SUFFIX_C_NAME=_skiko",
     ],
     includes = [
         "source/common",
