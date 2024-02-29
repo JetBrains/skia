@@ -67,9 +67,6 @@ if (skia_use_icu || skia_use_client_icu || skia_use_libgrapheme ||
       # These are explicitly *not* public defines because we don't want them
       # to leak to dependents.
       defines = [ "U_USING_ICU_NAMESPACE=0" ]
-      if (!skia_use_system_icu) {
-        defines += [ "U_DISABLE_RENAMING=1" ]
-      }
 
       sources = skia_unicode_icu_bidi_sources
       sources += skia_unicode_bidi_full_sources
