@@ -46,6 +46,11 @@ n = input_data.find(b'icudt')
 if n == -1:
   sys.exit("Cannot find a version number in %s." % input_file)
 
+# The original script was:
+# script = "../externals/icu/scripts/make_data_assembly.py"
+# We can't modify it because it's checked-out from ICU repo for every build.
+# Therefore we have this copy for skiko purposes.
+# This line adding '_skiko' prefix is the only difference with the original script
 version_number = "_skiko" + input_data[n + 5:n + 7].decode("ascii")
 # version_number = input_data[n + 5:n + 7].decode("ascii")
 
