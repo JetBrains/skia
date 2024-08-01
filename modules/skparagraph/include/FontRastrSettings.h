@@ -3,6 +3,7 @@
 #define FontRastrSettings_DEFINED
 
 #include "include/core/SkFont.h"
+#include "include/core/SkFontTypes.h"
 
 namespace skia {
 namespace textlayout {
