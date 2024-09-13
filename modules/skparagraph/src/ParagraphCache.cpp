@@ -123,21 +123,23 @@ uint32_t ParagraphCacheKey::computeHash() const {
         if (ts.fStyle.isPlaceholder()) {
             continue;
         }
-        hash = mix(hash, SkGoodHash()(relax(ts.fStyle.getLetterSpacing())));
-        hash = mix(hash, SkGoodHash()(relax(ts.fStyle.getWordSpacing())));
-        hash = mix(hash, SkGoodHash()(ts.fStyle.getLocale()));
-        hash = mix(hash, SkGoodHash()(relax(ts.fStyle.getHeight())));
-        hash = mix(hash, SkGoodHash()(relax(ts.fStyle.getBaselineShift())));
+        hash = mix(hash, SkGoodHash()(ts.fStyle.getFontStyle()));
         for (auto& ff : ts.fStyle.getFontFamilies()) {
             hash = mix(hash, SkGoodHash()(ff));
         }
+        hash = mix(hash, SkGoodHash()(relax(ts.fStyle.getFontSize())));
+        hash = mix(hash, SkGoodHash()(relax(ts.fStyle.getHeight())));
+        hash = mix(hash, SkGoodHash()(ts.fStyle.getHeightOverride() ? 1 : 0));
+        hash = mix(hash, SkGoodHash()(relax(ts.fStyle.getBaselineShift())));
+        hash = mix(hash, SkGoodHash()(relax(ts.fStyle.getTopRatio())));
+        hash = mix(hash, SkGoodHash()(ts.fStyle.getLocale()));
+        hash = mix(hash, SkGoodHash()(relax(ts.fStyle.getLetterSpacing())));
+        hash = mix(hash, SkGoodHash()(relax(ts.fStyle.getWordSpacing())));
         for (auto& ff : ts.fStyle.getFontFeatures()) {
             hash = mix(hash, SkGoodHash()(ff.fValue));
             hash = mix(hash, SkGoodHash()(ff.fName));
         }
         hash = mix(hash, std::hash<std::optional<FontArguments>>()(ts.fStyle.getFontArguments()));
-        hash = mix(hash, SkGoodHash()(ts.fStyle.getFontStyle()));
-        hash = mix(hash, SkGoodHash()(relax(ts.fStyle.getFontSize())));
         hash = mix(hash, SkGoodHash()(ts.fRange));
     }
 
@@ -155,6 +157,7 @@ uint32_t ParagraphCacheKey::computeHash() const {
         hash = mix(hash, SkGoodHash()(relax(strutStyle.getHeight())));
         hash = mix(hash, SkGoodHash()(relax(strutStyle.getLeading())));
         hash = mix(hash, SkGoodHash()(relax(strutStyle.getFontSize())));
+        hash = mix(hash, SkGoodHash()(relax(strutStyle.getTopRatio())));
         hash = mix(hash, SkGoodHash()(strutStyle.getHeightOverride()));
         hash = mix(hash, SkGoodHash()(strutStyle.getFontStyle()));
         hash = mix(hash, SkGoodHash()(strutStyle.getForceStrutHeight()));
@@ -186,18 +189,8 @@ bool ParagraphCacheKey::operator==(const ParagraphCacheKey& other) const {
     }
 
     // There is no need to compare default paragraph styles - they are included into fTextStyles
-    if (!exactlyEqual(fParagraphStyle.getHeight(), other.fParagraphStyle.getHeight())) {
-        return false;
-    }
-    if (fParagraphStyle.getTextDirection() != other.fParagraphStyle.getTextDirection()) {
-        return false;
-    }
 
-    if (!(fParagraphStyle.getStrutStyle() == other.fParagraphStyle.getStrutStyle())) {
-        return false;
-    }
-
-    if (!(fParagraphStyle.getReplaceTabCharacters() == other.fParagraphStyle.getReplaceTabCharacters())) {
+    if (!(fParagraphStyle == other.fParagraphStyle)) {
         return false;
     }
 
