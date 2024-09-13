@@ -9,6 +9,7 @@
 #include "include/core/SkStream.h"
 #include "include/core/SkTextBlob.h"
 #include "include/core/SkTypeface.h"
+#include "include/core/SkSurface.h"
 #include "include/effects/SkGradientShader.h"
 #include "modules/skparagraph/include/Paragraph.h"
 #include "modules/skparagraph/include/ParagraphStyle.h"
@@ -3598,60 +3599,87 @@ public:
 
 class ParagraphSlide69 : public ParagraphSlide_Base {
 public:
-  ParagraphSlide69() { fName = "Paragraph69"; }
+    ParagraphSlide69() { fName = "Paragraph69"; }
 
-  void draw(SkCanvas* canvas) override {
-    canvas->drawColor(SK_ColorWHITE);
+    void load(SkScalar w, SkScalar h) override {
+        fontCollection =
+            sk_make_sp<TestFontCollection>(GetResourcePath("fonts").c_str(), false, true);
+        // fontCollection->getParagraphCache()->reset();
+        // fontCollection->getParagraphCache()->turnOn(false);
+    }
 
-    auto fontCollection =
-        sk_make_sp<TestFontCollection>(GetResourcePath("fonts").c_str(), false, true);
+    void draw(SkCanvas* canvas) override {
+        canvas->drawColor(SK_ColorWHITE);
+        canvas->translate(10, 10);
 
-    auto paragraph1 = paragraphWithRastrSettings(fontCollection, "Lorien Ipsum [kAntiAlias, SkFontHinting::kSlight, subpixel: true] [default]",
-                                                 SkFont::Edging::kAntiAlias,
-                                                 SkFontHinting::kSlight,
-                                                 true);
+        constexpr SkFont::Edging edgingTypes[] {
+            SkFont::Edging::kAlias,
+            SkFont::Edging::kAntiAlias,
+            SkFont::Edging::kSubpixelAntiAlias,
+        };
 
-    auto paragraph2 = paragraphWithRastrSettings(fontCollection, "Lorien Ipsum [kSubpixelAntiAlias, SkFontHinting::kFull, subpixel: true]",
-                                                 SkFont::Edging::kSubpixelAntiAlias,
-                                                 SkFontHinting::kFull,
-                                                 true);
+        constexpr SkFontHinting hintingTypes[] {
+            SkFontHinting::kNone,
+            SkFontHinting::kSlight,
+            SkFontHinting::kNormal,
+            SkFontHinting::kFull
+        };
 
-    auto paragraph3 = paragraphWithRastrSettings(fontCollection, "Lorien Ipsum [kSubpixelAntiAlias, SkFontHinting::kFull, subpixel: false]",
-                                                 SkFont::Edging::kSubpixelAntiAlias,
-                                                 SkFontHinting::kFull,
-                                                 false);
+        FontRastrSettings fontRastrSettings;
+        for (const SkFont::Edging& edging : edgingTypes) {
+            fontRastrSettings.fEdging = edging;
+            canvas->save();
+            for (const SkFontHinting& hinting : hintingTypes) {
+                fontRastrSettings.fHinting = hinting;
 
-    paragraph1->layout(600);
-    paragraph1->paint(canvas, 0, 0);
-    paragraph2->layout(600);
-    paragraph2->paint(canvas, 0, 40);
-    paragraph3->layout(600);
-    paragraph3->paint(canvas, 0, 80);
-  }
+                fontRastrSettings.fSubpixel = false;
+                drawGlyph(canvas, fontRastrSettings);
+                canvas->translate(80, 0);
 
-protected:
-  std::unique_ptr<Paragraph> paragraphWithRastrSettings(sk_sp<FontCollection> fontCollection,
-                                                        const char* text,
-                                                        SkFont::Edging edging,
-                                                        SkFontHinting hinting,
-                                                        bool subpixel) {
-    FontRastrSettings fontRastrSettings;
-    fontRastrSettings.fEdging = edging;
-    fontRastrSettings.fHinting = hinting;
-    fontRastrSettings.fSubpixel = subpixel;
+                fontRastrSettings.fSubpixel = true;
+                drawGlyph(canvas, fontRastrSettings);
+                canvas->translate(80, 0);
+            }
+            canvas->restore();
+            canvas->translate(0, 80);
+        }
+    }
 
+private:
+    sk_sp<FontCollection> fontCollection;
 
-    ParagraphStyle paragraph_style;
-    paragraph_style.setFontRastrSettings(fontRastrSettings);
-    TextStyle textStyle;
-    textStyle.setFontFamilies({SkString("Roboto")});
-    textStyle.setFontSize(14.0);
-    textStyle.setColor(SK_ColorBLACK);
-    ParagraphBuilderImpl builder(paragraph_style, fontCollection);
-    builder.pushStyle(textStyle);
-    builder.addText(text);
-    return builder.Build();
-  }
+    void drawGlyph(SkCanvas* canvas, const FontRastrSettings& fontRastrSettings) {
+        auto p = buildParagraph("A", fontRastrSettings);
+        p->layout(10);
+        auto i = makeImage(canvas, 10, 10, p.get());
+        canvas->save();
+        canvas->scale(8.0f, 8.0f);
+        canvas->drawImageRect(i.get(),
+            SkRect::MakeWH(10, 10), SkRect::MakeWH(10, 10),
+            SkFilterMode::kNearest, nullptr, SkCanvas::kFast_SrcRectConstraint);
+        canvas->restore();
+    }
+
+    sk_sp<SkImage> makeImage(SkCanvas* canvas, int width, int height, Paragraph *paragraph) {
+        auto info = SkImageInfo::Make(width, height, kRGBA_8888_SkColorType, kPremul_SkAlphaType);
+        auto surface = canvas->makeSurface(info);
+        surface->getCanvas()->clear(SK_ColorTRANSPARENT);
+        paragraph->paint(surface->getCanvas(), 0.25f, 0.25f);
+        return surface->makeImageSnapshot();
+    }
+
+    std::unique_ptr<Paragraph> buildParagraph(const char* text, const FontRastrSettings& fontRastrSettings) {
+        ParagraphStyle paragraphStyle;
+        paragraphStyle.setFontRastrSettings(fontRastrSettings);
+        TextStyle textStyle;
+        textStyle.setFontFamilies({ SkString("Roboto") });
+        textStyle.setFontSize(10);
+        textStyle.setColor(SK_ColorBLACK);
+        ParagraphBuilderImpl builder(paragraphStyle, fontCollection);
+        builder.pushStyle(textStyle);
+        builder.addText(text);
+        return builder.Build();
+    }
 };
 
 // Google logo is shown in one style (the first one)
