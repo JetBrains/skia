@@ -22,7 +22,7 @@ TextStyle TextStyle::cloneForPlaceholder() {
     result.fHeightOverride = fHeightOverride;
     result.fIsPlaceholder = true;
     result.fFontFeatures = fFontFeatures;
-    result.fHalfLeading = fHalfLeading;
+    result.fTopRatio = fTopRatio;
     result.fBaselineShift = fBaselineShift;
     result.fFontArguments = fFontArguments;
     return result;
@@ -58,7 +58,7 @@ bool TextStyle::equals(const TextStyle& other) const {
     if (fHeightOverride != other.fHeightOverride) {
         return false;
     }
-    if (fHalfLeading != other.fHalfLeading) {
+    if (fTopRatio != other.fTopRatio) {
         return false;
     }
     if (fBaselineShift != other.fBaselineShift) {
@@ -119,6 +119,7 @@ bool TextStyle::equalsByFonts(const TextStyle& that) const {
            nearlyEqual(fWordSpacing, that.fWordSpacing) &&
            nearlyEqual(fHeight, that.fHeight) &&
            nearlyEqual(fBaselineShift, that.fBaselineShift) &&
+           nearlyEqual(fTopRatio, that.fTopRatio) &&
            nearlyEqual(fFontSize, that.fFontSize) &&
            fEdging == that.fEdging &&
            fSubpixel == that.fSubpixel &&
@@ -170,7 +171,7 @@ bool TextStyle::matchOneAttribute(StyleType styleType, const TextStyle& other) c
                    fSubpixel == other.fSubpixel &&
                    fHinting == other.fHinting &&
                    fHeight == other.fHeight &&
-                   fHalfLeading == other.fHalfLeading &&
+                   fTopRatio == other.fTopRatio &&
                    fBaselineShift == other.fBaselineShift &&
                    fFontArguments == other.fFontArguments;
         default:

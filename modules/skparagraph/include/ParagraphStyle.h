@@ -45,34 +45,36 @@ struct StrutStyle {
     bool getHeightOverride() const { return fHeightOverride; }
     void setHeightOverride(bool v) { fHeightOverride = v; }
 
-    void setHalfLeading(bool halfLeading) { fHalfLeading = halfLeading; }
-    bool getHalfLeading() const { return fHalfLeading; }
+    void setHalfLeading(bool halfLeading) { fTopRatio = halfLeading ? 0.5f : -1.0f; }
+    bool getHalfLeading() const { return fTopRatio == 0.5f; }
+
+    void setTopRatio(SkScalar topRatio) { fTopRatio = topRatio; }
+    SkScalar getTopRatio() const { return fTopRatio; }
 
     bool operator==(const StrutStyle& rhs) const {
-        return this->fEnabled == rhs.fEnabled &&
-               this->fHeightOverride == rhs.fHeightOverride &&
-               this->fForceHeight == rhs.fForceHeight &&
-               this->fHalfLeading == rhs.fHalfLeading &&
-               nearlyEqual(this->fLeading, rhs.fLeading) &&
-               nearlyEqual(this->fHeight, rhs.fHeight) &&
-               nearlyEqual(this->fFontSize, rhs.fFontSize) &&
+        return this->fFontFamilies == rhs.fFontFamilies &&
                this->fFontStyle == rhs.fFontStyle &&
-               this->fFontFamilies == rhs.fFontFamilies;
+               nearlyEqual(this->fFontSize, rhs.fFontSize) &&
+               nearlyEqual(this->fHeight, rhs.fHeight) &&
+               nearlyEqual(this->fLeading, rhs.fLeading) &&
+               nearlyEqual(this->fTopRatio, rhs.fTopRatio) &&
+               this->fForceHeight == rhs.fForceHeight &&
+               this->fEnabled == rhs.fEnabled &&
+               this->fHeightOverride == rhs.fHeightOverride;
     }
 
 private:
-
     std::vector<SkString> fFontFamilies;
     SkFontStyle fFontStyle;
     SkScalar fFontSize;
     SkScalar fHeight;
     SkScalar fLeading;
+    // [0..1]: the ratio of ascent to ascent+descent
+    // -1: proportional to the ascent/descent
+    SkScalar fTopRatio;
     bool fForceHeight;
     bool fEnabled;
     bool fHeightOverride;
-    // true: half leading.
-    // false: scale ascent/descent with fHeight.
-    bool fHalfLeading;
 };
 
 struct TextIndent {
@@ -98,14 +100,21 @@ struct ParagraphStyle {
     ParagraphStyle();
 
     bool operator==(const ParagraphStyle& rhs) const {
-        return this->fHeight == rhs.fHeight &&
-               this->fEllipsis == rhs.fEllipsis &&
-               this->fEllipsisUtf16 == rhs.fEllipsisUtf16 &&
-               this->fTextDirection == rhs.fTextDirection && this->fTextAlign == rhs.fTextAlign &&
+        return this->fStrutStyle == rhs.fStrutStyle &&
                this->fDefaultTextStyle == rhs.fDefaultTextStyle &&
+               this->fTextAlign == rhs.fTextAlign &&
+               this->fTextDirection == rhs.fTextDirection &&
+               this->fLinesLimit == rhs.fLinesLimit &&
+               this->fEllipsisUtf16 == rhs.fEllipsisUtf16 &&
+               this->fEllipsis == rhs.fEllipsis &&
+               this->fHeight == rhs.fHeight &&
+               this->fTextHeightBehavior == rhs.fTextHeightBehavior &&
                this->fTextIndent == rhs.fTextIndent &&
+               this->fFontRastrSettings == rhs.fFontRastrSettings &&
+               this->fHintingIsOn == rhs.fHintingIsOn &&
                this->fReplaceTabCharacters == rhs.fReplaceTabCharacters &&
-               this->fFakeMissingFontStyles == rhs.fFakeMissingFontStyles;
+               this->fFakeMissingFontStyles == rhs.fFakeMissingFontStyles &&
+               this->fApplyRoundingHack == rhs.fApplyRoundingHack;
     }
 
     const StrutStyle& getStrutStyle() const { return fStrutStyle; }
