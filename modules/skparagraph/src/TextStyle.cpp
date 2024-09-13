@@ -67,6 +67,15 @@ bool TextStyle::equals(const TextStyle& other) const {
     if (fFontSize != other.fFontSize) {
         return false;
     }
+    if (fEdging != other.fEdging) {
+        return false;
+    }
+    if (fSubpixel != other.fSubpixel) {
+        return false;
+    }
+    if (fHinting != other.fHinting) {
+        return false;
+    }
     if (fLocale != other.fLocale) {
         return false;
     }
@@ -111,6 +120,9 @@ bool TextStyle::equalsByFonts(const TextStyle& that) const {
            nearlyEqual(fHeight, that.fHeight) &&
            nearlyEqual(fBaselineShift, that.fBaselineShift) &&
            nearlyEqual(fFontSize, that.fFontSize) &&
+           fEdging == that.fEdging &&
+           fSubpixel == that.fSubpixel &&
+           fHinting == that.fHinting &&
            fLocale == that.fLocale;
 }
 
@@ -154,6 +166,9 @@ bool TextStyle::matchOneAttribute(StyleType styleType, const TextStyle& other) c
                    fLocale == other.fLocale &&
                    fFontFamilies == other.fFontFamilies &&
                    fFontSize == other.fFontSize &&
+                   fEdging == other.fEdging &&
+                   fSubpixel == other.fSubpixel &&
+                   fHinting == other.fHinting &&
                    fHeight == other.fHeight &&
                    fHalfLeading == other.fHalfLeading &&
                    fBaselineShift == other.fBaselineShift &&
