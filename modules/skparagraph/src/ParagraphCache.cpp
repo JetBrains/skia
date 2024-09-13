@@ -155,6 +155,7 @@ uint32_t ParagraphCacheKey::computeHash() const {
         hash = mix(hash, SkGoodHash()(relax(strutStyle.getHeight())));
         hash = mix(hash, SkGoodHash()(relax(strutStyle.getLeading())));
         hash = mix(hash, SkGoodHash()(relax(strutStyle.getFontSize())));
+        hash = mix(hash, SkGoodHash()(relax(strutStyle.getTopRatio())));
         hash = mix(hash, SkGoodHash()(strutStyle.getHeightOverride()));
         hash = mix(hash, SkGoodHash()(strutStyle.getFontStyle()));
         hash = mix(hash, SkGoodHash()(strutStyle.getForceStrutHeight()));

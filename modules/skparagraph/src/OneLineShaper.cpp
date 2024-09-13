@@ -210,7 +210,7 @@ void OneLineShaper::finish(const Block& block, SkScalar height, SkScalar& advanc
                     info,
                     run->fClusterStart,
                     height,
-                    block.fStyle.getHalfLeading(),
+                    block.fStyle.getTopRatio(),
                     block.fStyle.getBaselineShift(),
                     this->fParagraph->fRuns.size(),
                     advanceX
@@ -639,7 +639,7 @@ bool OneLineShaper::shape() {
 
             // Start from the beginning (hoping that it's a simple case one block - one run)
             fHeight = block.fStyle.getHeightOverride() ? block.fStyle.getHeight() : 0;
-            fUseHalfLeading = block.fStyle.getHalfLeading();
+            fTopRatio = block.fStyle.getTopRatio();
             fBaselineShift = block.fStyle.getBaselineShift();
             fAdvance = SkVector::Make(advanceX, 0);
             fCurrentText = block.fRange;

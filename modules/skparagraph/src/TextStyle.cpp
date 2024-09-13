@@ -22,7 +22,7 @@ TextStyle TextStyle::cloneForPlaceholder() {
     result.fHeightOverride = fHeightOverride;
     result.fIsPlaceholder = true;
     result.fFontFeatures = fFontFeatures;
-    result.fHalfLeading = fHalfLeading;
+    result.fTopRatio = fTopRatio;
     result.fBaselineShift = fBaselineShift;
     result.fFontArguments = fFontArguments;
     return result;
@@ -58,7 +58,7 @@ bool TextStyle::equals(const TextStyle& other) const {
     if (fHeightOverride != other.fHeightOverride) {
         return false;
     }
-    if (fHalfLeading != other.fHalfLeading) {
+    if (fTopRatio != other.fTopRatio) {
         return false;
     }
     if (fBaselineShift != other.fBaselineShift) {
@@ -155,7 +155,7 @@ bool TextStyle::matchOneAttribute(StyleType styleType, const TextStyle& other) c
                    fFontFamilies == other.fFontFamilies &&
                    fFontSize == other.fFontSize &&
                    fHeight == other.fHeight &&
-                   fHalfLeading == other.fHalfLeading &&
+                   fTopRatio == other.fTopRatio &&
                    fBaselineShift == other.fBaselineShift &&
                    fFontArguments == other.fFontArguments;
         default:

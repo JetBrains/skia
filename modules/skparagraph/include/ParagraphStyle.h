@@ -46,14 +46,17 @@ struct StrutStyle {
     bool getHeightOverride() const { return fHeightOverride; }
     void setHeightOverride(bool v) { fHeightOverride = v; }
 
-    void setHalfLeading(bool halfLeading) { fHalfLeading = halfLeading; }
-    bool getHalfLeading() const { return fHalfLeading; }
+    void setHalfLeading(bool halfLeading) { fTopRatio = halfLeading ? 0.5f : -1.0f; }
+    bool getHalfLeading() const { return fTopRatio == 0.5f; }
+
+    void setTopRatio(SkScalar topRatio) { fTopRatio = topRatio; }
+    SkScalar getTopRatio() const { return fTopRatio; }
 
     bool operator==(const StrutStyle& rhs) const {
         return this->fEnabled == rhs.fEnabled &&
                this->fHeightOverride == rhs.fHeightOverride &&
                this->fForceHeight == rhs.fForceHeight &&
-               this->fHalfLeading == rhs.fHalfLeading &&
+               this->fTopRatio == rhs.fTopRatio &&
                nearlyEqual(this->fLeading, rhs.fLeading) &&
                nearlyEqual(this->fHeight, rhs.fHeight) &&
                nearlyEqual(this->fFontSize, rhs.fFontSize) &&
@@ -71,9 +74,9 @@ private:
     bool fForceHeight;
     bool fEnabled;
     bool fHeightOverride;
-    // true: half leading.
-    // false: scale ascent/descent with fHeight.
-    bool fHalfLeading;
+    // [0..1]: the ratio of ascent to ascent+descent
+    // -1: proportional to the ascent/descent
+    SkScalar fTopRatio;
 };
 
 struct TextIndent {

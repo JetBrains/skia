@@ -707,12 +707,13 @@ void ParagraphImpl::resolveStrut() {
     if (strutStyle.getHeightOverride()) {
         SkScalar strutAscent = 0.0f;
         SkScalar strutDescent = 0.0f;
-        // The half leading flag doesn't take effect unless there's height override.
-        if (strutStyle.getHalfLeading()) {
+        // The top ratio doesn't take effect unless there's height override.
+        SkScalar topRatio = strutStyle.getTopRatio();
+        if (topRatio >= 0.0f && topRatio <= 1.0f) {
             const auto occupiedHeight = metrics.fDescent - metrics.fAscent;
             auto flexibleHeight = strutStyle.getHeight() * strutStyle.getFontSize() - occupiedHeight;
             // Distribute the flexible height evenly over and under.
-            flexibleHeight /= 2;
+            flexibleHeight *= topRatio;
             strutAscent = metrics.fAscent - flexibleHeight;
             strutDescent = metrics.fDescent + flexibleHeight;
         } else {
@@ -1036,11 +1037,13 @@ void ParagraphImpl::computeEmptyMetrics() {
         textStyle.getHeightOverride()) {
         const auto intrinsicHeight = fEmptyMetrics.height();
         const auto strutHeight = textStyle.getHeight() * textStyle.getFontSize();
-        if (paragraphStyle().getStrutStyle().getHalfLeading()) {
+        SkScalar topRatio = paragraphStyle().getStrutStyle().getTopRatio();
+        if (topRatio >= 0.0f && topRatio <= 1.0f) {
+            const auto extraLeading = (strutHeight - intrinsicHeight) * topRatio;
             fEmptyMetrics.update(
-                fEmptyMetrics.ascent(),
-                fEmptyMetrics.descent(),
-                fEmptyMetrics.leading() + strutHeight - intrinsicHeight);
+                fEmptyMetrics.ascent() - extraLeading,
+                fEmptyMetrics.descent() + extraLeading,
+                fEmptyMetrics.leading() + extraLeading * 2.0f);
         } else {
             const auto multiplier = strutHeight / intrinsicHeight;
             fEmptyMetrics.update(

@@ -18,7 +18,7 @@ Run::Run(ParagraphImpl* owner,
          const SkShaper::RunHandler::RunInfo& info,
          size_t firstChar,
          SkScalar heightMultiplier,
-         bool useHalfLeading,
+         SkScalar topRatio,
          SkScalar baselineShift,
          size_t index,
          SkScalar offsetX)
@@ -33,7 +33,7 @@ Run::Run(ParagraphImpl* owner,
     , fOffsets(fGlyphData->offsets)
     , fClusterIndexes(fGlyphData->clusterIndexes)
     , fHeightMultiplier(heightMultiplier)
-    , fUseHalfLeading(useHalfLeading)
+    , fTopRatio(topRatio)
     , fBaselineShift(baselineShift)
 {
     fBidiLevel = info.fBidiLevel;
@@ -67,8 +67,8 @@ void Run::calculateMetrics() {
     }
     const auto runHeight = fHeightMultiplier * fFont.getSize();
     const auto fontIntrinsicHeight = fCorrectDescent - fCorrectAscent;
-    if (fUseHalfLeading) {
-        const auto extraLeading = (runHeight - fontIntrinsicHeight) / 2;
+    if (fTopRatio >= 0.0f && fTopRatio <= 1.0f) {
+        const auto extraLeading = (runHeight - fontIntrinsicHeight) * fTopRatio;
         fCorrectAscent -= extraLeading;
         fCorrectDescent += extraLeading;
     } else {

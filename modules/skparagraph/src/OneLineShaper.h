@@ -18,7 +18,7 @@ public:
     explicit OneLineShaper(ParagraphImpl* paragraph)
         : fParagraph(paragraph)
         , fHeight(0.0f)
-        , fUseHalfLeading(false)
+        , fTopRatio(-1.0f)
         , fBaselineShift(0.0f)
         , fAdvance(SkPoint::Make(0.0f, 0.0f))
         , fUnresolvedGlyphs(0)
@@ -93,7 +93,7 @@ private:
                                            info,
                                            fCurrentText.start,
                                            fHeight,
-                                           fUseHalfLeading,
+                                           fTopRatio,
                                            fBaselineShift,
                                            ++fUniqueRunId,
                                            fAdvance.fX);
@@ -115,7 +115,7 @@ private:
     ParagraphImpl* fParagraph;
     TextRange fCurrentText;
     SkScalar fHeight;
-    bool fUseHalfLeading;
+    SkScalar fTopRatio;
     SkScalar fBaselineShift;
     SkVector fAdvance;
     size_t fUnresolvedGlyphs;
