@@ -145,6 +145,11 @@ uint32_t ParagraphCacheKey::computeHash() const {
     hash = mix(hash, SkGoodHash()(fParagraphStyle.getTextDirection()));
     hash = mix(hash, SkGoodHash()(fParagraphStyle.getReplaceTabCharacters() ? 1 : 0));
 
+    auto& fontRastrSettings = fParagraphStyle.getFontRastrSettings();
+    hash = mix(hash, SkGoodHash()(fontRastrSettings.fEdging));
+    hash = mix(hash, SkGoodHash()(fontRastrSettings.fHinting));
+    hash = mix(hash, SkGoodHash()(fontRastrSettings.fSubpixel ? 1 : 0));
+
     auto& strutStyle = fParagraphStyle.getStrutStyle();
     if (strutStyle.getStrutEnabled()) {
         hash = mix(hash, SkGoodHash()(relax(strutStyle.getHeight())));

@@ -9,15 +9,15 @@ namespace skia {
 namespace textlayout {
 
 struct FontRastrSettings {
-    FontRastrSettings() {
-        fEdging = SkFont::Edging::kAntiAlias;
-        fHinting = SkFontHinting::kSlight;
-        fSubpixel = true;
-    }
 
-    SkFont::Edging fEdging;
-    SkFontHinting fHinting;
-    bool fSubpixel;
+    /** Whether edge pixels draw opaque or with partial transparency. */
+    SkFont::Edging fEdging = SkFont::Edging::kAntiAlias;
+
+    /** Level of glyph outline adjustment. */
+    SkFontHinting fHinting = SkFontHinting::kSlight;
+
+    /** Whether glyphs respect sub-pixel positioning. */
+    bool fSubpixel = true;
 };
 
 

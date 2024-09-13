@@ -278,7 +278,7 @@ public:
     void setTypeface(sk_sp<SkTypeface> typeface) { fTypeface = std::move(typeface); }
 
     const FontRastrSettings& getFontRastrSettings() const { return fFontRastrSettings; }
-    void setFontRastrSettings(FontRastrSettings fontRastrSettings) { fFontRastrSettings = fontRastrSettings; }
+    void setFontRastrSettings(const FontRastrSettings& fontRastrSettings) { fFontRastrSettings = fontRastrSettings; }
 
     SkString getLocale() const { return fLocale; }
     void setLocale(const SkString& locale) { fLocale = locale; }

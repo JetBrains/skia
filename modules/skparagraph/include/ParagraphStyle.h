@@ -112,7 +112,7 @@ struct ParagraphStyle {
     void setStrutStyle(StrutStyle strutStyle) { fStrutStyle = std::move(strutStyle); }
 
     const FontRastrSettings& getFontRastrSettings() const { return fFontRastrSettings; }
-    void setFontRastrSettings(FontRastrSettings fontRastrSettings) { fFontRastrSettings = fontRastrSettings; }
+    void setFontRastrSettings(const FontRastrSettings& fontRastrSettings) { fFontRastrSettings = fontRastrSettings; }
 
     const TextStyle& getTextStyle() const { return fDefaultTextStyle; }
     void setTextStyle(const TextStyle& textStyle) { fDefaultTextStyle = textStyle; }
