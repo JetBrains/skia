@@ -68,9 +68,9 @@ void Run::calculateMetrics() {
     const auto runHeight = fHeightMultiplier * fFont.getSize();
     const auto fontIntrinsicHeight = fCorrectDescent - fCorrectAscent;
     if (fTopRatio >= 0.0f && fTopRatio <= 1.0f) {
-        const auto extraLeading = (runHeight - fontIntrinsicHeight) * fTopRatio;
-        fCorrectAscent -= extraLeading;
-        fCorrectDescent += extraLeading;
+        const auto extraLeading = runHeight - fontIntrinsicHeight;
+        fCorrectAscent -= extraLeading * fTopRatio;
+        fCorrectDescent += extraLeading * (1.0f - fTopRatio);
     } else {
         const auto multiplier = runHeight / fontIntrinsicHeight;
         fCorrectAscent *= multiplier;

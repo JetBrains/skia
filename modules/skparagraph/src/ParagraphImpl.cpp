@@ -712,10 +712,8 @@ void ParagraphImpl::resolveStrut() {
         if (topRatio >= 0.0f && topRatio <= 1.0f) {
             const auto occupiedHeight = metrics.fDescent - metrics.fAscent;
             auto flexibleHeight = strutStyle.getHeight() * strutStyle.getFontSize() - occupiedHeight;
-            // Distribute the flexible height evenly over and under.
-            flexibleHeight *= topRatio;
-            strutAscent = metrics.fAscent - flexibleHeight;
-            strutDescent = metrics.fDescent + flexibleHeight;
+            strutAscent = metrics.fAscent - flexibleHeight * topRatio;
+            strutDescent = metrics.fDescent + flexibleHeight * (1.0f - topRatio);
         } else {
             const SkScalar strutMetricsHeight = metrics.fDescent - metrics.fAscent + metrics.fLeading;
             const auto strutHeightMultiplier = strutMetricsHeight == 0
@@ -1039,11 +1037,11 @@ void ParagraphImpl::computeEmptyMetrics() {
         const auto strutHeight = textStyle.getHeight() * textStyle.getFontSize();
         SkScalar topRatio = paragraphStyle().getStrutStyle().getTopRatio();
         if (topRatio >= 0.0f && topRatio <= 1.0f) {
-            const auto extraLeading = (strutHeight - intrinsicHeight) * topRatio;
+            const auto extraLeading = strutHeight - intrinsicHeight;
             fEmptyMetrics.update(
-                fEmptyMetrics.ascent() - extraLeading,
-                fEmptyMetrics.descent() + extraLeading,
-                fEmptyMetrics.leading() + extraLeading * 2.0f);
+                fEmptyMetrics.ascent() - extraLeading * topRatio,
+                fEmptyMetrics.descent() + extraLeading * (1.0f - topRatio),
+                fEmptyMetrics.leading() + extraLeading);
         } else {
             const auto multiplier = strutHeight / intrinsicHeight;
             fEmptyMetrics.update(
