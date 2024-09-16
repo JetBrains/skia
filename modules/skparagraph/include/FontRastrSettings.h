@@ -18,6 +18,12 @@ struct FontRastrSettings {
 
     /** Whether glyphs respect sub-pixel positioning. */
     bool fSubpixel = true;
+
+    bool operator==(const FontRastrSettings& rhs) const {
+        return this->fEdging == rhs.fEdging &&
+               this->fHinting == rhs.fHinting &&
+               this->fSubpixel == rhs.fSubpixel;
+    }
 };
 
 
