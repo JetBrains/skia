@@ -2517,8 +2517,9 @@ if (skia_enable_tools) {
 
   if (skia_enable_graphite || skia_enable_ganesh) {
     import("gn/tests.gni")
+    import("skiko_tests/skiko_tests.gni")
     test_lib("tests") {
-      sources = tests_sources + pathops_tests_sources
+      sources = tests_sources + pathops_tests_sources + skiko_tests_sources
       frameworks = []
       if (skia_use_metal) {
         cflags_objcc = [ "-fobjc-arc" ]
@@ -2571,6 +2572,7 @@ if (skia_enable_tools) {
         ":typeface_fontations_tests",
         "modules/bentleyottmann:tests",
         "modules/skottie:tests",
+        "modules/skparagraph",
         "modules/skparagraph:tests",
         "modules/sksg:tests",
         "modules/skshaper",

@@ -1,0 +1,44 @@
+name: Run Tests for Skiko
+
+on:
+  push:
+    branches:
+      - skiko
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: macos-13
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python 3
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+
+      - name: Run git-sync-deps (skia)
+        run: python3 tools/git-sync-deps
+
+      - name: Install Ninja
+        run: |
+          python3 bin/fetch-ninja
+
+      - name: Build skia DM
+        run: |
+          bin/gn gen out/Debug
+          ./third_party/ninja/ninja -C out/Debug dm -j 8
+
+      - name: Run tests
+        run: |
+          set +e
+          ./run_tests_for_skiko.sh
+          EXIT_CODE=$?
+          if [ $EXIT_CODE -ne 0 ]; then
+            echo "❌ Tests failed with exit code $EXIT_CODE"
+            exit $EXIT_CODE
+          else
+            echo "✅ Tests passed successfully"
+          fi
