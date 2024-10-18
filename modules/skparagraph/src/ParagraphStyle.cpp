@@ -24,6 +24,41 @@ TextIndent::TextIndent() {
     fRestLine = 0.0;
 }
 
+
+bool ParagraphStyle::equals(const ParagraphStyle& rhs) const {
+    return this->fStrutStyle == rhs.fStrutStyle &&
+           this->fDefaultTextStyle == rhs.fDefaultTextStyle &&
+           this->fTextAlign == rhs.fTextAlign &&
+           this->fTextDirection == rhs.fTextDirection &&
+           this->fLinesLimit == rhs.fLinesLimit &&
+           this->fEllipsisUtf16 == rhs.fEllipsisUtf16 &&
+           this->fEllipsis == rhs.fEllipsis &&
+           this->fHeight == rhs.fHeight &&
+           this->fTextHeightBehavior == rhs.fTextHeightBehavior &&
+           this->fTextIndent == rhs.fTextIndent &&
+           this->fFontRastrSettings == rhs.fFontRastrSettings &&
+           this->fHintingIsOn == rhs.fHintingIsOn &&
+           this->fReplaceTabCharacters == rhs.fReplaceTabCharacters &&
+           this->fApplyRoundingHack == rhs.fApplyRoundingHack;
+}
+
+bool ParagraphStyle::equalsByLayout(const ParagraphStyle& rhs) const {
+    return this->fStrutStyle == rhs.fStrutStyle &&
+           this->fDefaultTextStyle.equalsByFonts(rhs.fDefaultTextStyle) &&
+           this->fTextAlign == rhs.fTextAlign &&
+           this->fTextDirection == rhs.fTextDirection &&
+           this->fLinesLimit == rhs.fLinesLimit &&
+           this->fEllipsisUtf16 == rhs.fEllipsisUtf16 &&
+           this->fEllipsis == rhs.fEllipsis &&
+           nearlyEqual(fHeight, rhs.fHeight) &&
+           this->fTextHeightBehavior == rhs.fTextHeightBehavior &&
+           this->fTextIndent == rhs.fTextIndent &&
+           this->fFontRastrSettings == rhs.fFontRastrSettings &&
+           this->fHintingIsOn == rhs.fHintingIsOn &&
+           this->fReplaceTabCharacters == rhs.fReplaceTabCharacters &&
+           this->fApplyRoundingHack == rhs.fApplyRoundingHack;
+}
+
 ParagraphStyle::ParagraphStyle() {
     fTextAlign = TextAlign::kStart;
     fTextDirection = TextDirection::kLtr;

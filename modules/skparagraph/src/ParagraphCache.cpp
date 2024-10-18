@@ -190,7 +190,7 @@ bool ParagraphCacheKey::operator==(const ParagraphCacheKey& other) const {
 
     // There is no need to compare default paragraph styles - they are included into fTextStyles
 
-    if (!(fParagraphStyle == other.fParagraphStyle)) {
+    if (!fParagraphStyle.equalsByLayout(other.fParagraphStyle)) {
         return false;
     }
 
