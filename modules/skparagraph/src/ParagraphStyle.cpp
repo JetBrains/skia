@@ -24,6 +24,33 @@ TextIndent::TextIndent() {
     fRestLine = 0.0;
 }
 
+bool ParagraphStyle::almostEquals(const ParagraphStyle& rhs) const {
+    return this->fStrutStyle == rhs.fStrutStyle &&
+           this->fTextAlign == rhs.fTextAlign &&
+           this->fTextDirection == rhs.fTextDirection &&
+           this->fLinesLimit == rhs.fLinesLimit &&
+           this->fEllipsisUtf16 == rhs.fEllipsisUtf16 &&
+           this->fEllipsis == rhs.fEllipsis &&
+           this->fTextHeightBehavior == rhs.fTextHeightBehavior &&
+           this->fTextIndent == rhs.fTextIndent &&
+           this->fHintingIsOn == rhs.fHintingIsOn &&
+           this->fReplaceTabCharacters == rhs.fReplaceTabCharacters &&
+           this->fFakeMissingFontStyles == rhs.fFakeMissingFontStyles &&
+           this->fApplyRoundingHack == rhs.fApplyRoundingHack;
+}
+
+bool ParagraphStyle::equals(const ParagraphStyle& rhs) const {
+    return this->almostEquals(rhs) &&
+           this->fDefaultTextStyle == rhs.fDefaultTextStyle &&
+           this->fHeight == rhs.fHeight;
+}
+
+bool ParagraphStyle::equalsByLayout(const ParagraphStyle& rhs) const {
+    return this->almostEquals(rhs) &&
+           this->fDefaultTextStyle.equalsByFonts(rhs.fDefaultTextStyle) &&
+           nearlyEqual(fHeight, rhs.fHeight);
+}
+
 ParagraphStyle::ParagraphStyle() {
     fTextAlign = TextAlign::kStart;
     fTextDirection = TextDirection::kLtr;
