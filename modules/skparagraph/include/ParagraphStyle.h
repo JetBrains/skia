@@ -165,6 +165,9 @@ private:
     bool fHintingIsOn;
     bool fReplaceTabCharacters;
     bool fApplyRoundingHack = true;
+
+    // common part of equals and equalsByLayout
+    bool almostEquals(const ParagraphStyle& rhs) const;
 };
 }  // namespace textlayout
 }  // namespace skia

@@ -5580,6 +5580,7 @@ UNIX_ONLY_TEST(SkParagraph_CacheStyles, reporter) {
     TextStyle text_style;
     text_style.setFontFamilies({SkString("Roboto")});
     text_style.setColor(SK_ColorBLACK);
+    paragraph_style.setTextStyle(text_style);
 
     const char* text = "text";
     const size_t len = strlen(text);
@@ -5600,6 +5601,9 @@ UNIX_ONLY_TEST(SkParagraph_CacheStyles, reporter) {
     };
 
     test(0, false);
+    // setting forground color should not affect cache match
+    text_style.setForegroundColor(SkPaint());
+    paragraph_style.setTextStyle(text_style);
     test(1, true);
     text_style.setLetterSpacing(10);
     test(1, false);
