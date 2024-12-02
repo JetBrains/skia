@@ -33,6 +33,7 @@ BASE_LINKOPTS = [
     "-sDYNAMIC_EXECUTION=0",
     "-sFILESYSTEM=0",
     "-sEXPORTED_FUNCTIONS=['_malloc','_free']",
+    "-sSUPPORT_LONGJMP=wasm"
 ]
 
 RELEASE_OPTS = [

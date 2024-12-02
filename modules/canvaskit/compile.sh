@@ -269,6 +269,7 @@ echo "Compiling"
   skia_canvaskit_enable_paragraph=${ENABLE_PARAGRAPH} \
   skia_canvaskit_enable_bidi=${ENABLE_BIDI} \
   skia_canvaskit_enable_webgl=${ENABLE_WEBGL} \
-  skia_canvaskit_enable_webgpu=${ENABLE_WEBGPU}"
+  skia_canvaskit_enable_webgpu=${ENABLE_WEBGPU} \
+  extra_cflags=[\"-sSUPPORT_LONGJMP=wasm\"]"
 
 ${NINJA} -C ${BUILD_DIR} canvaskit.js

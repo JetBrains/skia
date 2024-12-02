@@ -349,6 +349,7 @@ skia_wasm_lib("canvaskit") {
     "-sINITIAL_MEMORY=128MB",
     "-sWASM",
     "-sSTRICT=1",
+    "-sSUPPORT_LONGJMP=wasm"
   ]
 
   defines = [
