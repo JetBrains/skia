@@ -35,6 +35,11 @@ BASE_LINKOPTS = [
     # https://github.com/emscripten-core/emscripten/pull/24079
     "-sEXPORTED_RUNTIME_METHODS=HEAP32,HEAPU8,HEAPU16,HEAPU32,HEAPF32",
     "-sINCOMING_MODULE_JS_API=onRuntimeInitialized,locateFile",
+
+    # This option leverages a new feature that brings built-in instructions for throwing
+    # and catching exceptions to WebAssembly. As a result, it can reduce code size and
+    # performance overhead compared to the JavaScript-based implementation.
+    "-sSUPPORT_LONGJMP=wasm",
 ]
 
 RELEASE_OPTS = [
