@@ -174,12 +174,28 @@ const char* SkParse::FindS32(const char str[], int32_t* value)
     return str;
 }
 
+#include <locale.h>
+
+#if defined(SK_BUILD_FOR_MAC) || defined(SK_BUILD_FOR_IOS)
+#include <xlocale.h>
+#endif
+
+#if defined(SK_BUILD_FOR_WIN)
+  static const _locale_t kDefaultLocale = _create_locale(LC_ALL, "C");
+#else
+  static const locale_t kDefaultLocale = newlocale(LC_ALL_MASK, "C", nullptr);
+#endif
+
 const char* SkParse::FindScalar(const char str[], SkScalar* value) {
     SkASSERT(str);
     str = skip_ws(str);
 
     char* stop;
-    float v = (float)strtod(str, &stop);
+    #if defined(SK_BUILD_FOR_WIN)
+        float v = _strtof_l(str, &stop, kDefaultLocale);
+    #else
+        float v = strtof_l(str, &stop, kDefaultLocale);
+    #endif
     if (str == stop) {
         return nullptr;
     }
