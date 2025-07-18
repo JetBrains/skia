@@ -236,22 +236,39 @@ def git_sync_deps(deps_file_path, command_line_os_requests, shallow, verbose):
 
   multithread(git_checkout_to_directory, list_of_arg_lists)
 
+# Since ~m138 Google has changed the limits for parallel downloads and
+# this ensures that git-sync-deps won't fall with HTTP error 429
+def multithread(function, list_of_arg_lists, max_workers=1):
+    anything_failed = False
+    semaphore = threading.Semaphore(max_workers)
+    threads = []
 
-def multithread(function, list_of_arg_lists):
-  anything_failed = False
-  threads = []
-  def hook(args):
-    nonlocal anything_failed
-    anything_failed = True
-  threading.excepthook = hook
-  for args in list_of_arg_lists:
-    thread = threading.Thread(None, function, None, args)
-    thread.start()
-    threads.append(thread)
-  for thread in threads:
-    thread.join()
-  if anything_failed:
-    raise Exception("Thread failure detected")
+    def worker(*args):
+        nonlocal anything_failed
+        try:
+            function(*args)
+        except Exception:
+            anything_failed = True
+        finally:
+            semaphore.release()
+
+    # Install your excepthook if you still want it globally
+    def hook(args):
+        nonlocal anything_failed
+        anything_failed = True
+    threading.excepthook = hook
+
+    for args in list_of_arg_lists:
+        semaphore.acquire()
+        t = threading.Thread(target=worker, args=args)
+        t.start()
+        threads.append(t)
+
+    for t in threads:
+        t.join()
+
+    if anything_failed:
+        raise Exception("Thread failure detected")
 
 
 def main(argv):
