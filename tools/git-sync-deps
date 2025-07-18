@@ -238,7 +238,7 @@ def git_sync_deps(deps_file_path, command_line_os_requests, shallow, verbose):
 
 # Since ~m138 Google has changed the limits for parallel downloads and
 # this ensures that git-sync-deps won't fall with HTTP error 429
-def multithread(function, list_of_arg_lists, max_workers=2):
+def multithread(function, list_of_arg_lists, max_workers=1):
     anything_failed = False
     semaphore = threading.Semaphore(max_workers)
     threads = []
