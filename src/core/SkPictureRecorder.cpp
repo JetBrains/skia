@@ -81,9 +81,16 @@ sk_sp<SkPicture> SkPictureRecorder::finishRecordingAsPicture() {
     };
 
     if (fBBH) {
+        SkPicture const* const* drawablePicts = nullptr;
+        int drawableCount = 0;
+        if (pictList) {
+            drawablePicts = pictList->begin();
+            drawableCount = pictList->count();
+        }
+
         AutoTArray<SkRect> bounds(fRecord->count());
         AutoTMalloc<SkBBoxHierarchy::Metadata> meta(fRecord->count());
-        SkRecordFillBounds(fCullRect, *fRecord, bounds.data(), meta);
+        SkRecordFillBounds(fCullRect, *fRecord, drawablePicts, drawableCount, bounds.data(), meta);
 
         fBBH->insert(bounds.data(), meta, fRecord->count());
 
