@@ -19,7 +19,10 @@ class SkRecord;
 struct SkRect;
 
 // Calculate conservative identity space bounds for each op in the record.
-void SkRecordFillBounds(const SkRect& cullRect, const SkRecord&,
+void SkRecordFillBounds(const SkRect& cullRect, const SkRecord& record,
+                        SkRect bounds[], SkBBoxHierarchy::Metadata[]);
+void SkRecordFillBounds(const SkRect& cullRect, const SkRecord& record,
+                        SkPicture const* const drawablePicts[], int drawableCount,
                         SkRect bounds[], SkBBoxHierarchy::Metadata[]);
 
 // Draw an SkRecord into an SkCanvas.  A convenience wrapper around SkRecords::Draw.

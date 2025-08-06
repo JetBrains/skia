@@ -205,8 +205,11 @@ template <> void Draw::draw(const DrawDrawable& r) {
 class FillBounds : SkNoncopyable {
 public:
     FillBounds(const SkRect& cullRect, const SkRecord& record,
+               SkPicture const* const drawablePicts[], int drawableCount,
                SkRect bounds[], SkBBoxHierarchy::Metadata meta[])
         : fCullRect(cullRect)
+        , fDrawablePicts(drawablePicts)
+        , fDrawableCount(drawableCount)
         , fBounds(bounds)
         , fMeta(meta) {
         fCTM = SkMatrix::I();
@@ -503,6 +506,16 @@ private:
     }
 
     Bounds bounds(const DrawDrawable& op) const {
+        if (fDrawablePicts) {
+            SkASSERT(op.index >= 0);
+            SkASSERT(op.index < fDrawableCount);
+            SkPicture const *picture = fDrawablePicts[op.index];
+            SkRect dst = picture->cullRect();
+            if (op.matrix) {
+                op.matrix->mapRect(&dst);
+            }
+            return this->adjustAndMap(dst, nullptr);
+        }
         return this->adjustAndMap(op.worstCaseBounds, nullptr);
     }
 
@@ -564,6 +577,10 @@ private:
     // We do not guarantee anything for operations outside of the cull rect
     const SkRect fCullRect;
 
+    // Reference to captured pictures to get correct bounds. Same approach as in SkRecords::Draw.
+    SkPicture const* const* fDrawablePicts;
+    int fDrawableCount;
+
     // Conservative identity-space bounds for each op in the SkRecord.
     Bounds* fBounds;
 
@@ -584,11 +601,15 @@ private:
 
 void SkRecordFillBounds(const SkRect& cullRect, const SkRecord& record,
                         SkRect bounds[], SkBBoxHierarchy::Metadata meta[]) {
-    {
-        SkRecords::FillBounds visitor(cullRect, record, bounds, meta);
-        for (int i = 0; i < record.count(); i++) {
-            visitor.setCurrentOp(i);
-            record.visit(i, visitor);
-        }
+    SkRecordFillBounds(cullRect, record, nullptr, 0, bounds, meta);
+}
+
+void SkRecordFillBounds(const SkRect& cullRect, const SkRecord& record,
+                        SkPicture const* const drawablePicts[], int drawableCount,
+                        SkRect bounds[], SkBBoxHierarchy::Metadata meta[]) {
+    SkRecords::FillBounds visitor(cullRect, record, drawablePicts, drawableCount, bounds, meta);
+    for (int i = 0; i < record.count(); i++) {
+        visitor.setCurrentOp(i);
+        record.visit(i, visitor);
     }
 }
