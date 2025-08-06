@@ -90,8 +90,8 @@ public:
     SkScalar ascent() const { return fFontMetrics.fAscent + fBaselineShift; }
     SkScalar descent() const { return fFontMetrics.fDescent + fBaselineShift; }
     SkScalar leading() const { return fFontMetrics.fLeading; }
-    SkScalar correctAscent() const { return fCorrectAscent + fBaselineShift; }
-    SkScalar correctDescent() const { return fCorrectDescent + fBaselineShift; }
+    SkScalar correctAscent() const { return fCorrectAscent; }
+    SkScalar correctDescent() const { return fCorrectDescent; }
     SkScalar correctLeading() const { return fCorrectLeading; }
     const SkFont& font() const { return fFont; }
     bool leftToRight() const { return fBidiLevel % 2 == 0; }
