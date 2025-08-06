@@ -18,6 +18,7 @@ public:
     explicit OneLineShaper(ParagraphImpl* paragraph)
         : fParagraph(paragraph)
         , fHeight(0.0f)
+        , fHeightOverride(false)
         , fTopRatio(-1.0f)
         , fBaselineShift(0.0f)
         , fAdvance(SkPoint::Make(0.0f, 0.0f))
@@ -81,7 +82,7 @@ private:
 #ifdef SK_DEBUG
     void printState();
 #endif
-    void finish(const Block& block, SkScalar height, SkScalar& advanceX);
+    void finish(const Block& block, SkScalar height, bool heightOverride, SkScalar& advanceX);
 
     void beginLine() override {}
     void runInfo(const RunInfo&) override {}
@@ -93,6 +94,7 @@ private:
                                            info,
                                            fCurrentText.start,
                                            fHeight,
+                                           fHeightOverride,
                                            fTopRatio,
                                            fBaselineShift,
                                            ++fUniqueRunId,
@@ -115,6 +117,7 @@ private:
     ParagraphImpl* fParagraph;
     TextRange fCurrentText;
     SkScalar fHeight;
+    bool fHeightOverride;
     SkScalar fTopRatio;
     SkScalar fBaselineShift;
     SkVector fAdvance;

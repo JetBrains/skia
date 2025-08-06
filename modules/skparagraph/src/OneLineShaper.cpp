@@ -144,7 +144,7 @@ void OneLineShaper::fillGaps(size_t startingCount) {
     }
 }
 
-void OneLineShaper::finish(const Block& block, SkScalar height, SkScalar& advanceX) {
+void OneLineShaper::finish(const Block& block, SkScalar height, bool heightOverride, SkScalar& advanceX) {
     auto blockText = block.fRange;
 
     // Add all unresolved blocks to resolved blocks
@@ -212,6 +212,7 @@ void OneLineShaper::finish(const Block& block, SkScalar height, SkScalar& advanc
                     info,
                     run->fClusterStart,
                     height,
+                    heightOverride,
                     block.fStyle.getTopRatio(),
                     block.fStyle.getBaselineShift(),
                     this->fParagraph->fRuns.size(),
@@ -609,9 +610,10 @@ bool OneLineShaper::iterateThroughShapingRegions(const ShapeVisitor& shape) {
         auto& run = fParagraph->fRuns.emplace_back(this->fParagraph,
                                        runInfo,
                                        placeholder.fRange.start,
-                                       0.0f,
-                                       0.0f,
-                                       false,
+                                       0.0f, // heightMultiplier
+                                       false, // heightOverride
+                                       -1.0f, // topRatio
+                                       0.0f, // baselineShift
                                        fParagraph->fRuns.size(),
                                        advanceX);
 
@@ -649,6 +651,7 @@ bool OneLineShaper::shape() {
 
             // Start from the beginning (hoping that it's a simple case one block - one run)
             fHeight = block.fStyle.getHeight();
+            fHeightOverride = block.fStyle.getHeightOverride();
             fTopRatio = block.fStyle.getTopRatio();
             fBaselineShift = block.fStyle.getBaselineShift();
             fAdvance = SkVector::Make(advanceX, 0);
@@ -730,7 +733,7 @@ bool OneLineShaper::shape() {
                 }
             });
 
-            this->finish(block, fHeight, advanceX);
+            this->finish(block, fHeight, fHeightOverride, advanceX);
         });
 
         return true;

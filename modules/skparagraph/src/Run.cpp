@@ -18,6 +18,7 @@ Run::Run(ParagraphImpl* owner,
          const SkShaper::RunHandler::RunInfo& info,
          size_t firstChar,
          SkScalar heightMultiplier,
+         bool heightOverride,
          SkScalar topRatio,
          SkScalar baselineShift,
          size_t index,
@@ -33,6 +34,7 @@ Run::Run(ParagraphImpl* owner,
     , fOffsets(fGlyphData->offsets)
     , fClusterIndexes(fGlyphData->clusterIndexes)
     , fHeightMultiplier(heightMultiplier)
+    , fHeightOverride(heightOverride)
     , fTopRatio(topRatio)
     , fBaselineShift(baselineShift)
 {
@@ -64,17 +66,21 @@ void Run::calculateMetrics() {
     fCorrectAscent = fFontMetrics.fAscent - fFontMetrics.fLeading * 0.5;
     fCorrectDescent = fFontMetrics.fDescent + fFontMetrics.fLeading * 0.5;
     fCorrectLeading = 0;
-    const auto runHeight = fHeightMultiplier * fFont.getSize();
-    const auto fontIntrinsicHeight = fCorrectDescent - fCorrectAscent;
-    if (fTopRatio >= 0.0f && fTopRatio <= 1.0f) {
-        const auto extraLeading = runHeight - fontIntrinsicHeight;
-        fCorrectAscent -= extraLeading * fTopRatio;
-        fCorrectDescent += extraLeading * (1.0f - fTopRatio);
-    } else {
-        const auto multiplier = runHeight / fontIntrinsicHeight;
-        fCorrectAscent *= multiplier;
-        fCorrectDescent *= multiplier;
+
+    if (fHeightOverride) {
+        const auto runHeight = fHeightMultiplier * fFont.getSize();
+        const auto fontIntrinsicHeight = fCorrectDescent - fCorrectAscent;
+        if (fTopRatio >= 0.0f && fTopRatio <= 1.0f) {
+            const auto extraLeading = runHeight - fontIntrinsicHeight;
+            fCorrectAscent -= extraLeading * fTopRatio;
+            fCorrectDescent += extraLeading * (1.0f - fTopRatio);
+        } else {
+            const auto multiplier = runHeight / fontIntrinsicHeight;
+            fCorrectAscent *= multiplier;
+            fCorrectDescent *= multiplier;
+        }
     }
+
     // If we shift the baseline we need to make sure the shifted text fits the line
     fCorrectAscent += fBaselineShift;
     fCorrectDescent += fBaselineShift;
