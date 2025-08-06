@@ -58,6 +58,7 @@ public:
         const SkShaper::RunHandler::RunInfo& info,
         size_t firstChar,
         SkScalar heightMultiplier,
+        bool heightOverride,
         SkScalar topRatio,
         SkScalar baselineShift,
         size_t index,
@@ -97,6 +98,7 @@ public:
     TextDirection getTextDirection() const { return leftToRight() ? TextDirection::kLtr : TextDirection::kRtl; }
     size_t index() const { return fIndex; }
     SkScalar heightMultiplier() const { return fHeightMultiplier; }
+    bool heightOverride() const { return fHeightOverride; }
     SkScalar topRatio() const { return fTopRatio; }
     SkScalar baselineShift() const { return fBaselineShift; }
     PlaceholderStyle* placeholderStyle() const;
@@ -204,6 +206,7 @@ private:
 
     SkFontMetrics fFontMetrics;
     const SkScalar fHeightMultiplier;
+    const bool fHeightOverride;
     const SkScalar fTopRatio;
     const SkScalar fBaselineShift;
     SkScalar fCorrectAscent;

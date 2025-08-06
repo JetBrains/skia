@@ -259,7 +259,7 @@ public:
     void setBaselineShift(SkScalar baselineShift) { fBaselineShift = baselineShift; }
 
     void setHeight(SkScalar height) { fHeight = height; }
-    SkScalar getHeight() const { return fHeightOverride ? fHeight : 1.0f; }
+    SkScalar getHeight() const { return fHeightOverride ? fHeight : 0.0f; }
 
     void setHeightOverride(bool heightOverride) { fHeightOverride = heightOverride; }
     bool getHeightOverride() const { return fHeightOverride; }
