@@ -643,8 +643,17 @@ std::unique_ptr<Run> TextLine::shapeEllipsis(const SkString& ellipsis, const Clu
 
     class ShapeHandler final : public SkShaper::RunHandler {
     public:
-        ShapeHandler(SkScalar lineHeight, SkScalar topRatio, SkScalar baselineShift, const SkString& ellipsis)
-            : fRun(nullptr), fLineHeight(lineHeight), fTopRatio(topRatio), fBaselineShift(baselineShift), fEllipsis(ellipsis) {}
+        ShapeHandler(SkScalar lineHeight,
+                bool lineHeightOverride,
+                SkScalar topRatio,
+                SkScalar baselineShift,
+                const SkString& ellipsis)
+            : fRun(nullptr)
+            , fLineHeight(lineHeight)
+            , fLineHeightOverride(lineHeightOverride)
+            , fTopRatio(topRatio)
+            , fBaselineShift(baselineShift)
+            , fEllipsis(ellipsis) {}
         std::unique_ptr<Run> run() & { return std::move(fRun); }
 
     private:
@@ -656,7 +665,7 @@ std::unique_ptr<Run> TextLine::shapeEllipsis(const SkString& ellipsis, const Clu
 
         Buffer runBuffer(const RunInfo& info) override {
             SkASSERT(!fRun);
-            fRun = std::make_unique<Run>(nullptr, info, 0, fLineHeight, fTopRatio, fBaselineShift, 0, 0);
+            fRun = std::make_unique<Run>(nullptr, info, 0, fLineHeight, fLineHeightOverride, fTopRatio, fBaselineShift, 0, 0);
             return fRun->newRunBuffer();
         }
 
@@ -671,6 +680,7 @@ std::unique_ptr<Run> TextLine::shapeEllipsis(const SkString& ellipsis, const Clu
 
         std::unique_ptr<Run> fRun;
         SkScalar fLineHeight;
+        bool fLineHeightOverride;
         SkScalar fTopRatio;
         SkScalar fBaselineShift;
         SkString fEllipsis;
@@ -690,7 +700,7 @@ std::unique_ptr<Run> TextLine::shapeEllipsis(const SkString& ellipsis, const Clu
     }
 
     auto shaped = [&](sk_sp<SkTypeface> typeface, sk_sp<SkFontMgr> fallback) -> std::unique_ptr<Run> {
-        ShapeHandler handler(run.heightMultiplier(), run.topRatio(), run.baselineShift(), ellipsis);
+        ShapeHandler handler(run.heightMultiplier(), run.heightOverride(), run.topRatio(), run.baselineShift(), ellipsis);
         SkFont font(std::move(typeface), textStyle.getFontSize());
         font.setEdging(textStyle.getFontEdging());
         font.setHinting(textStyle.getFontHinting());
