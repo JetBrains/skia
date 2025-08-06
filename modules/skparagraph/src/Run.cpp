@@ -62,9 +62,6 @@ void Run::calculateMetrics() {
     fCorrectAscent = fFontMetrics.fAscent - fFontMetrics.fLeading * 0.5;
     fCorrectDescent = fFontMetrics.fDescent + fFontMetrics.fLeading * 0.5;
     fCorrectLeading = 0;
-    if (SkScalarNearlyZero(fHeightMultiplier)) {
-        return;
-    }
     const auto runHeight = fHeightMultiplier * fFont.getSize();
     const auto fontIntrinsicHeight = fCorrectDescent - fCorrectAscent;
     if (fTopRatio >= 0.0f && fTopRatio <= 1.0f) {
