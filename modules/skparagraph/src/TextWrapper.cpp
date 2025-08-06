@@ -328,10 +328,9 @@ void TextWrapper::breakTextIntoLines(ParagraphImpl* parent,
             widthWithSpaces = fEndLine.widthWithGhostSpaces();
         }
 
-        // If the line is empty with the hard line break, let's take the paragraph font (flutter???)
-        if (fEndLine.metrics().isClean()) {
-            fEndLine.setMetrics(parent->getEmptyMetrics());
-        }
+        // It's important to always take into account empty metrics because baseline shifting needs to keep
+        // the original placement inside final metrics.
+        fEndLine.metrics().add(parent->getEmptyMetrics());
 
         // Deal with placeholder clusters == runs[@size==1]
         Run* lastRun = nullptr;

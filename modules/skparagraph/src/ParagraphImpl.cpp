@@ -596,6 +596,10 @@ void ParagraphImpl::breakShapedTextIntoLines(SkScalar maxWidth) {
         auto textRange = TextRange(0, this->text().size());
         auto textExcludingSpaces = TextRange(0, fTrailingSpaces);
         InternalLineMetrics metrics(this->strutForceHeight());
+
+        // It's important to always take into account empty metrics because baseline shifting needs to keep
+        // the original placement inside final metrics.
+        metrics.add(this->getEmptyMetrics());
         metrics.add(&run);
         auto disableFirstAscent = this->paragraphStyle().getTextHeightBehavior() &
                                   TextHeightBehavior::kDisableFirstAscent;
@@ -1041,19 +1045,19 @@ void ParagraphImpl::computeEmptyMetrics() {
         textStyle.getHeightOverride()) {
         const auto intrinsicHeight = fEmptyMetrics.height();
         const auto strutHeight = textStyle.getHeight() * textStyle.getFontSize();
-        SkScalar topRatio = paragraphStyle().getStrutStyle().getTopRatio();
+        SkScalar topRatio = textStyle.getTopRatio();
         if (topRatio >= 0.0f && topRatio <= 1.0f) {
             const auto extraLeading = strutHeight - intrinsicHeight;
             fEmptyMetrics.update(
                 fEmptyMetrics.ascent() - extraLeading * topRatio,
                 fEmptyMetrics.descent() + extraLeading * (1.0f - topRatio),
-                fEmptyMetrics.leading() + extraLeading);
+                fEmptyMetrics.leading());
         } else {
             const auto multiplier = strutHeight / intrinsicHeight;
             fEmptyMetrics.update(
                 fEmptyMetrics.ascent() * multiplier,
                 fEmptyMetrics.descent() * multiplier,
-                fEmptyMetrics.leading() * multiplier);
+                fEmptyMetrics.leading());
         }
     }
 
