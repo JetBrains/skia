@@ -9,6 +9,7 @@
 #include "include/core/SkBitmap.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkColor.h"
+#include "include/core/SkDrawable.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkPicture.h"
 #include "include/core/SkPictureRecorder.h"
@@ -124,4 +125,35 @@ DEF_TEST(PictureNegativeSpace, r) {
         REPORTER_ASSERT(r, pic->approximateOpCount() == 3);
         REPORTER_ASSERT(r, pic->cullRect() == (SkRect{-20,-20,-10,-10}));
     }
+}
+
+class CustomDrawable : public SkDrawable {
+public:
+    void onDraw(SkCanvas* canvas) override {
+        canvas->drawRect({ 20, 20, 40, 40 }, SkPaint {});
+    }
+
+    SkRect onGetBounds() override {
+        return SkRect { 0, 0, 100, 100 };
+    }
+
+protected:
+    sk_sp<SkPicture> onMakePictureSnapshot() override {
+        SkRTreeFactory bbhFactory;
+        SkPictureRecorder recorder;
+        SkCanvas* canvas = recorder.beginRecording(this->getBounds(), &bbhFactory);
+        this->draw(canvas);
+        return recorder.finishRecordingAsPicture();
+    }
+};
+
+DEF_TEST(PictureBBHFromDrawable, r) {
+    SkRTreeFactory bbhFactory;
+    SkPictureRecorder recorder;
+    auto drawable = sk_make_sp<CustomDrawable>();
+
+    auto canvas = recorder.beginRecording({ 0, 0, 100, 100 }, &bbhFactory);
+    canvas->drawDrawable(drawable.get());
+    auto pic = recorder.finishRecordingAsPicture();
+    REPORTER_ASSERT(r, pic->cullRect() == (SkRect { 20, 20, 40, 40 }));
 }
