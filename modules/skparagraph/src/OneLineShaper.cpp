@@ -649,7 +649,7 @@ bool OneLineShaper::shape() {
             auto blockSpan = SkSpan<Block>(&block, 1);
 
             // Start from the beginning (hoping that it's a simple case one block - one run)
-            fHeight = block.fStyle.getHeightOverride() ? block.fStyle.getHeight() : 0;
+            fHeight = block.fStyle.getHeight();
             fTopRatio = block.fStyle.getTopRatio();
             fBaselineShift = block.fStyle.getBaselineShift();
             fAdvance = SkVector::Make(advanceX, 0);
