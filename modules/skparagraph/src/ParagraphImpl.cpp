@@ -1039,19 +1039,19 @@ void ParagraphImpl::computeEmptyMetrics() {
         textStyle.getHeightOverride()) {
         const auto intrinsicHeight = fEmptyMetrics.height();
         const auto strutHeight = textStyle.getHeight() * textStyle.getFontSize();
-        SkScalar topRatio = paragraphStyle().getStrutStyle().getTopRatio();
+        SkScalar topRatio = textStyle.getTopRatio();
         if (topRatio >= 0.0f && topRatio <= 1.0f) {
             const auto extraLeading = strutHeight - intrinsicHeight;
             fEmptyMetrics.update(
                 fEmptyMetrics.ascent() - extraLeading * topRatio,
                 fEmptyMetrics.descent() + extraLeading * (1.0f - topRatio),
-                fEmptyMetrics.leading() + extraLeading);
+                fEmptyMetrics.leading());
         } else {
             const auto multiplier = strutHeight / intrinsicHeight;
             fEmptyMetrics.update(
                 fEmptyMetrics.ascent() * multiplier,
                 fEmptyMetrics.descent() * multiplier,
-                fEmptyMetrics.leading() * multiplier);
+                fEmptyMetrics.leading());
         }
     }
 
