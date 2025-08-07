@@ -590,6 +590,10 @@ void ParagraphImpl::breakShapedTextIntoLines(SkScalar maxWidth) {
         auto textRange = TextRange(0, this->text().size());
         auto textExcludingSpaces = TextRange(0, fTrailingSpaces);
         InternalLineMetrics metrics(this->strutForceHeight());
+
+        // It's important to always take into account empty metrics because baseline shifting needs to keep
+        // the original placement inside final metrics.
+        metrics.add(this->getEmptyMetrics());
         metrics.add(&run);
         auto disableFirstAscent = this->paragraphStyle().getTextHeightBehavior() &
                                   TextHeightBehavior::kDisableFirstAscent;
