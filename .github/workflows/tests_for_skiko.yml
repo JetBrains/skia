@@ -8,19 +8,64 @@ on:
 
 jobs:
   build-and-test:
-    runs-on: macos-13
+    name: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            configs:
+              - gl
+              - gldft
+              - glmsaa4
+              - gldmsaa
+            matches:
+              # From infra/bots/gen_tasks_logic/dm_flags.go
+              - "~^SkRuntimeBlender_Ganesh$" # skbug.com/458193911
+              - "~^BigImageTest_Ganesh$"
+          - os: macos-15
+            configs:
+              - mtl
+            matches:
+              # From infra/bots/gen_tasks_logic/dm_flags.go
+              - "~^BigImageTest_Ganesh$"
+              - "~^GrMeshTest$" # skbug.com/40038854
+              - "~^DMSAA_aa_dst_read_after_dmsaa$" # b/438450848
+              - "~^DMSAA_dst_read$" # b/438450848
+              - "~^SurfacePartialDraw_Gpu$" # b/438450848
+              - "~^FilterResult_ganesh_RescaleWithColorFilter$" # b/438450848
+              - "~^FilterResult_ganesh_RescaleWithTransform$" # b/438450848
+              - "~^FilterResult_ganesh_RescaleWithTileMode$" # b/438450848
+              - "~^FilterResult_ganesh_ColorFilterBetweenCrops$" # b/438450848
+              - "~^FilterResult_ganesh_TransformAndTile$" # b/438450848
+              - "~^FilterResult_ganesh_PeriodicTileCrops$" # b/438450848
+              - "~^FilterResult_ganesh_IntersectingCrops$" # b/438450848
+              - "~^FilterResult_ganesh_CropDisjointFromSourceAndOutput$" # b/438450848
+              - "~^FilterResult_ganesh_Crop$" # b/438450848
+              # Extra GitHub Actions workarounds
+              - "~^ProcessorCloneTest$" # flaky
+              - "~^FilterResult_ganesh_CroppedTransformedTransparencyAffectingColorFilter$"
+              - "~^FilterResult_ganesh_CroppedTransformedColorFilter$"
+    runs-on: ${{ matrix.os }}
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Set up Python 3
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.x'
+          python-version: '3.9'
+
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          ./tools/install_dependencies.sh --yes
 
       - name: Run git-sync-deps (skia)
-        run: python3 tools/git-sync-deps
+        run: |
+          python3 tools/git-sync-deps
 
       - name: Install Ninja
         run: |
@@ -33,12 +78,6 @@ jobs:
 
       - name: Run tests
         run: |
-          set +e
-          ./run_tests_for_skiko.sh
-          EXIT_CODE=$?
-          if [ $EXIT_CODE -ne 0 ]; then
-            echo "❌ Tests failed with exit code $EXIT_CODE"
-            exit $EXIT_CODE
-          else
-            echo "✅ Tests passed successfully"
-          fi
+          python3 .github/scripts/run_dm_tests_using_bot_config.py \
+            --configs-json '${{ toJSON(matrix.configs) }}' \
+            --matches-json '${{ toJSON(matrix.matches) }}'
