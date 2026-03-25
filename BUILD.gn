@@ -48,10 +48,10 @@ config("skia_public") {
   } else if (skia_gl_standard == "webgl") {
     defines += [ "SK_ASSUME_WEBGL=1" ]
   }
-  if (skia_enable_ganesh) {
+  if (skia_enable_ganesh && !skia_gpu_as_extension) {
     defines += [ "SK_GANESH" ]
   }
-  if (skia_enable_graphite) {
+  if (skia_enable_graphite && !skia_gpu_as_extension) {
     defines += [ "SK_GRAPHITE" ]
   }
   if (skia_disable_tracing) {
@@ -882,7 +882,7 @@ group("compile_all_sksl_tests") {
 }
 
 optional("gpu_shared") {
-  enabled = skia_enable_ganesh || skia_enable_graphite
+  enabled = skia_enable_ganesh || skia_enable_graphite || skia_gpu_as_extension
 
   configs = []
   deps = []
@@ -1056,6 +1056,125 @@ optional("gpu") {
   }
 }
 
+if (skia_enable_ganesh && skia_gpu_as_extension) {
+  config("skia_ganesh_ext_public") {
+    defines = [ "SK_GANESH" ]
+    configs = [ ":gpu_public" ]
+  }
+
+  skia_static_library("skia_ganesh_ext") {
+    configs = skia_library_configs
+    configs += [ ":skia_ganesh_ext_public" ]
+    check_includes = false
+
+    public = skia_gpu_public
+    sources = skia_ganesh_private
+
+    deps = [
+      ":gpu_shared",
+      ":minify_sksl",
+      ":run_sksllex",
+    ]
+    if (skia_generate_workarounds) {
+      deps += [ ":workaround_list" ]
+    }
+
+    libs = []
+    frameworks = []
+
+    if (is_android) {
+      sources += skia_gpu_android_private
+
+      if (defined(ndk_api) && ndk_api >= 26) {
+        libs += [ "android" ]
+      }
+    }
+
+    if (skia_use_gl) {
+      if (is_android) {
+        sources += [
+          "src/gpu/ganesh/gl/egl/GrGLMakeEGLInterface.cpp",
+          "src/gpu/ganesh/gl/egl/GrGLMakeNativeInterface_egl.cpp",
+        ]
+        sources += skia_android_gl_sources
+
+        if (defined(ndk_api) && ndk_api >= 26) {
+          libs += [ "android" ]
+        }
+      } else if (skia_use_egl) {
+        if (skia_use_epoxy_egl) {
+          sources += [ "src/gpu/ganesh/gl/epoxy/GrGLMakeEpoxyEGLInterface.cpp" ]
+          libs += [ "epoxy" ]
+        } else {
+          sources += [
+            "src/gpu/ganesh/gl/egl/GrGLMakeEGLInterface.cpp",
+            "src/gpu/ganesh/gl/egl/GrGLMakeNativeInterface_egl.cpp",
+          ]
+          libs += [ "EGL" ]
+        }
+      } else if (skia_use_webgl) {
+        sources += [ "src/gpu/ganesh/gl/webgl/GrGLMakeNativeInterface_webgl.cpp" ]
+      } else if (is_linux && skia_use_x11) {
+        sources += [
+          "src/gpu/ganesh/gl/glx/GrGLMakeGLXInterface.cpp",
+          "src/gpu/ganesh/gl/glx/GrGLMakeNativeInterface_glx.cpp",
+        ]
+        libs += [ "GL" ]
+      } else if (is_mac) {
+        sources += [ "src/gpu/ganesh/gl/mac/GrGLMakeNativeInterface_mac.cpp" ]
+      } else if (is_ios) {
+        sources += [ "src/gpu/ganesh/gl/iOS/GrGLMakeNativeInterface_iOS.cpp" ]
+      } else if (is_win && !skia_enable_winuwp) {
+        sources += [
+          "src/gpu/ganesh/gl/win/GrGLMakeNativeInterface_win.cpp",
+          "src/gpu/ganesh/gl/win/GrGLMakeWinInterface.cpp",
+        ]
+        if (target_cpu != "arm64") {
+          libs += [ "OpenGL32.lib" ]
+        }
+      } else {
+        sources += [ "src/gpu/ganesh/gl/GrGLMakeNativeInterface_none.cpp" ]
+      }
+      public += skia_gpu_gl_public
+      sources += skia_gpu_gl_private
+    }
+
+    if (skia_use_vulkan) {
+      public += skia_gpu_vk_public
+      sources += skia_gpu_vk_private
+      configs += [ ":use_skia_vulkan_headers" ]
+      if (is_android) {
+        sources += skia_gpu_vk_android_private
+      }
+    }
+
+    if (skia_use_direct3d) {
+      deps += [ "//third_party/d3d12allocator" ]
+      sources += skia_direct3d_sources
+      libs += [
+        "d3d12.lib",
+        "dxgi.lib",
+        "d3dcompiler.lib",
+      ]
+    }
+
+    cflags_objcc = []
+    if (skia_use_metal) {
+      public += skia_gpu_metal_public
+      sources += skia_gpu_metal_private
+      sources += skia_gpu_metal_cpp
+      frameworks += [ "Metal.framework" ]
+      frameworks += [ "Foundation.framework" ]
+      if (is_ios) {
+        frameworks += [ "UIKit.framework" ]
+      }
+      cflags_objcc += [ "-fobjc-arc" ]
+    }
+
+    all_dependent_configs = [ ":skia_ganesh_ext_public" ]
+  }
+}
+
 optional("vello") {
   enabled = skia_enable_vello_shaders
   public_defines = [ "SK_ENABLE_VELLO_SHADERS" ]
@@ -1214,6 +1333,77 @@ optional("graphite") {
   }
   if (is_debug) {
     public_defines += [ "SK_PIPELINE_LIFETIME_LOGGING" ]
+  }
+}
+
+if (skia_enable_graphite && skia_gpu_as_extension) {
+  config("skia_graphite_ext_public") {
+    defines = [ "SK_GRAPHITE" ]
+    configs = [ ":graphite_public" ]
+  }
+
+  skia_static_library("skia_graphite_ext") {
+    configs = skia_library_configs
+    configs += [ ":skia_graphite_ext_public" ]
+    check_includes = false
+
+    public = skia_graphite_public
+    sources = skia_graphite_sources
+    sources += skia_sksl_graphite_modules_sources
+
+    deps = [
+      ":gpu_shared",
+      ":vello",
+    ]
+
+    libs = []
+    frameworks = []
+
+    if (is_android) {
+      sources += skia_graphite_android_private
+    }
+
+    if (skia_enable_vello_shaders) {
+      sources += skia_graphite_vello_sources
+    }
+
+    if (skia_use_dawn) {
+      public += skia_graphite_dawn_public
+      sources += skia_graphite_dawn_sources
+      deps += [ "//third_party/dawn" ]
+    }
+    if (skia_use_metal) {
+      public += skia_graphite_mtl_public
+      sources += skia_graphite_mtl_sources
+      frameworks += [ "Metal.framework" ]
+      frameworks += [ "Foundation.framework" ]
+      if (is_ios) {
+        frameworks += [ "UIKit.framework" ]
+      }
+    }
+    if (skia_use_vulkan) {
+      public += skia_graphite_vk_public
+      sources += skia_graphite_vk_sources
+      configs += [ ":use_skia_vulkan_headers" ]
+      if (skia_enable_precompile) {
+        public += skia_graphite_vk_precompile_public
+        sources += skia_graphite_vk_precompile_sources
+      }
+      if (is_debug) {
+        sources += skia_sksl_validate_spirv_sources
+        deps += [
+          "//third_party/externals/spirv-tools:spvtools",
+
+          #spvtools depends on this but doesn't deps it in.
+          "//third_party/externals/spirv-tools:spvtools_val",
+        ]
+      }
+    }
+    if (skia_enable_precompile) {
+      public += skia_graphite_precompile_public
+      sources += skia_graphite_precompile_sources
+    }
+    all_dependent_configs = [ ":skia_graphite_ext_public" ]
   }
 }
 
@@ -1827,14 +2017,21 @@ skia_component("skia") {
 
   public_deps = [
     ":core",
-    ":gpu",
-    ":graphite",
     ":jpeg_encode",
     ":pdf",
     ":pdf_jpeg_helpers",
     ":webp_encode",
     ":xps",
   ]
+
+  if (skia_gpu_as_extension) {
+    public_deps += [ ":gpu_shared" ]
+  } else {
+    public_deps += [
+      ":gpu",
+      ":graphite",
+    ]
+  }
 
   deps = [
     ":android_utils",

@@ -31,6 +31,12 @@ def main():
       out_bin + '/*.lib',
       out_bin + '/icudtl.dat',
       'include/**/*',
+      'include/gpu/graphite/*.h',
+      'include/gpu/graphite/dawn/*.h',
+      'include/gpu/graphite/mtl/*.h',
+      'include/gpu/graphite/precompile/*.h',
+      'include/gpu/graphite/vk/*.h',
+      'include/gpu/graphite/vk/precompile/*.h',
       'modules/particles/include/*.h',
       'modules/skottie/include/*.h',
       'modules/skottie/src/*.h',
@@ -86,16 +92,20 @@ def main():
 
   with zipfile.ZipFile(skia_dir / dist, 'w', compression=zipfile.ZIP_DEFLATED) as zip_file:
     dirs = set()
+    files = set()
     for glob in globs:
       for path in pathlib.Path(skia_dir).glob(glob):
         if path.is_dir():
           continue
         relative_path = path.relative_to(skia_dir)
+        if relative_path in files:
+          continue
         for directory in parents(relative_path):
           if directory not in dirs:
             zip_file.write(skia_dir / directory, arcname=str(directory))
             dirs.add(directory)
         zip_file.write(path, arcname=str(relative_path))
+        files.add(relative_path)
 
   return 0
 

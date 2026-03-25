@@ -98,6 +98,9 @@ declare_args() {
 
   skia_enable_ganesh = true
   skia_enable_graphite = false
+  # When true, gpu_shared stays in libskia.a while Ganesh and Graphite are
+  # emitted as separate extension libraries.
+  skia_gpu_as_extension = false
   skia_use_zlib = true
 
   if (is_ios) {

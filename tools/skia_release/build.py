@@ -75,6 +75,9 @@ def main():
   host = common.host()
   target = common.target()
   ndk = common.ndk()
+  gpu_as_extension = common.gpu_as_extension()
+  enable_ganesh = common.enable_ganesh()
+  enable_graphite = common.enable_graphite()
 
   ninja = ninja_path(host)
   is_ios = target in ('ios', 'iosSim')
@@ -187,18 +190,30 @@ def main():
         'skia_use_webgl=true',
         'skia_gl_standard="webgl"',
         'skia_use_gl=true',
-        'skia_enable_gpu=true',
         'skia_enable_svg=true',
         'skia_use_expat=true',
         'extra_cflags+=["-DSK_SUPPORT_GPU=1", "-DSK_GL", "-DSK_DISABLE_LEGACY_SHADERCONTEXT", "-sSUPPORT_LONGJMP=wasm"]',
     ]
+
+  if gpu_as_extension:
+    args += ['skia_gpu_as_extension=true']
+  if not enable_ganesh:
+    args += ['skia_enable_ganesh=false']
+  if enable_graphite:
+    args += ['skia_enable_graphite=true']
 
   out = os.path.join('out', build_type + '-' + target + '-' + machine)
   gn = 'gn.exe' if host == 'windows' else 'gn'
   gn_cmd = [os.path.join('bin', gn), 'gen', out, '--args=' + ' '.join(args)]
   print(gn_cmd)
   subprocess.check_call(gn_cmd)
-  subprocess.check_call([ninja, '-C', out, 'skia', 'modules'])
+  ninja_targets = ['skia', 'modules']
+  if gpu_as_extension and enable_ganesh:
+    ninja_targets.append('skia_ganesh_ext')
+  if gpu_as_extension:
+    if enable_graphite:
+      ninja_targets.append('skia_graphite_ext')
+  subprocess.check_call([ninja, '-C', out] + ninja_targets)
   return 0
 
 
