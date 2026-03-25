@@ -14,6 +14,7 @@ def create_parser(version_required=False):
   parser.add_argument('--build-type', default='Release')
   parser.add_argument('--enable-ganesh', action=argparse.BooleanOptionalAction, default=True)
   parser.add_argument('--enable-graphite', action=argparse.BooleanOptionalAction, default=False)
+  parser.add_argument('--enable-dawn', action=argparse.BooleanOptionalAction, default=False)
   parser.add_argument('--gpu-as-extension', action=argparse.BooleanOptionalAction, default=False)
   parser.add_argument('--version', required=version_required)
   parser.add_argument('--classifier')
@@ -133,6 +134,12 @@ def enable_graphite():
   parser = create_parser()
   (args, _) = parser.parse_known_args()
   return args.enable_graphite
+
+
+def enable_dawn():
+  parser = create_parser()
+  (args, _) = parser.parse_known_args()
+  return args.enable_dawn
 
 
 def enable_ganesh():
