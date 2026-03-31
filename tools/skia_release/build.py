@@ -136,14 +136,14 @@ def main():
           'skia_gl_standard="gles"',
           'skia_use_egl=true',
           'extra_cflags_cc+=["-fno-exceptions", "-fno-rtti", "-D_GLIBCXX_USE_CXX11_ABI=0", "-mno-outline-atomics"]',
-          'cc="gcc-10"',
-          'cxx="g++-10"',
+          'cc="gcc-12"',
+          'cxx="g++-12"',
       ]
     else:
       args += [
           'extra_cflags_cc+=["-fno-exceptions", "-fno-rtti","-D_GLIBCXX_USE_CXX11_ABI=0"]',
-          'cc="gcc-10"',
-          'cxx="g++-10"',
+          'cc="gcc-12"',
+          'cxx="g++-12"',
       ]
   elif target == 'windows':
     args += [
