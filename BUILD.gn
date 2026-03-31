@@ -1367,11 +1367,6 @@ if (skia_enable_graphite && skia_gpu_as_extension) {
       sources += skia_graphite_vello_sources
     }
 
-    if (skia_use_dawn) {
-      public += skia_graphite_dawn_public
-      sources += skia_graphite_dawn_sources
-      deps += [ "//third_party/dawn" ]
-    }
     if (skia_use_metal) {
       public += skia_graphite_mtl_public
       sources += skia_graphite_mtl_sources
