@@ -1405,6 +1405,48 @@ if (skia_enable_graphite && skia_gpu_as_extension) {
     }
     all_dependent_configs = [ ":skia_graphite_ext_public" ]
   }
+
+  config("skia_graphite_dawn_ext_public") {
+    defines = [ "SK_DAWN" ]
+  }
+
+  skia_static_library("skia_graphite_dawn_ext") {
+    configs = skia_library_configs
+    configs += [ ":skia_graphite_ext_public" ]
+    check_includes = false
+
+    public = skia_graphite_public
+    sources = skia_graphite_sources
+    sources += skia_sksl_graphite_modules_sources
+
+    deps = [
+      ":gpu_shared",
+      ":vello",
+    ]
+
+    libs = []
+    frameworks = []
+
+    if (is_android) {
+      sources += skia_graphite_android_private
+    }
+
+    if (skia_enable_vello_shaders) {
+      sources += skia_graphite_vello_sources
+    }
+
+    public += skia_graphite_dawn_public
+    sources += skia_graphite_dawn_sources
+    if (!is_wasm) {
+        deps += [ "//third_party/dawn" ]
+    }
+
+    if (skia_enable_precompile) {
+      public += skia_graphite_precompile_public
+      sources += skia_graphite_precompile_sources
+    }
+    all_dependent_configs = [ ":skia_graphite_ext_public" ]
+  }
 }
 
 skia_source_set("pathops") {
