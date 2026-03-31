@@ -265,10 +265,10 @@ def get_windows_settings(args):
 
   # Explicitly tell CMake where to find the Resource Compiler, Manifest Tool, and Archiver.
   rc_exe_path = os.path.join(args.win_sdk, "bin", args.win_sdk_version,
-                             args.target_cpu, "rc.exe")
+                             "x64", "rc.exe")
   win_cfgs.append(f"-DCMAKE_RC_COMPILER={rc_exe_path.replace(os.sep, '/')}")
   mt_exe_path = os.path.join(args.win_sdk, "bin", args.win_sdk_version,
-                             args.target_cpu, "mt.exe")
+                             "x64", "mt.exe")
   win_cfgs.append(f"-DCMAKE_MT={mt_exe_path.replace(os.sep, '/')}")
 
   ar_exe_path = os.path.join(args.win_vc, "Tools", "MSVC",
