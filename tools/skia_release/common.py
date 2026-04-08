@@ -97,6 +97,13 @@ def version():
   return milestone + '-' + revision[:10]
 
 
+def current_revision():
+  sha = os.environ.get('GITHUB_SHA')
+  if sha:
+    return sha
+  return _git_output(repo_root(), 'rev-parse', 'HEAD')
+
+
 def infer_milestone(branches, all_branches=''):
   milestone = _find_milestone(branches, containing_head=True)
   if milestone is not None:

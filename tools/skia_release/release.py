@@ -31,7 +31,11 @@ def main():
         urllib.request.Request(releases_url + '/tags/' + version, headers=headers)
     ).read()
   except urllib.error.URLError:
-    data = '{"tag_name":"' + version + '","name":"' + version + '"}'
+    data = json.dumps({
+        'tag_name': version,
+        'name': version,
+        'target_commitish': common.current_revision(),
+    })
     resp = urllib.request.urlopen(
         urllib.request.Request(releases_url, data=data.encode('utf-8'), headers=headers)
     ).read()
