@@ -544,7 +544,7 @@ void Context::asyncReadPixelsYUV420(std::unique_ptr<Recorder> recorder,
                          PixelTransferResult* result) {
         sk_sp<Surface> dstSurface = Surface::MakeScratch(recorder.get(),
                                                          planeInfo,
-                                                         std::move(label),
+                                                         label,
                                                          Budgeted::kYes,
                                                          Mipmapped::kNo,
                                                          SkBackingFit::kApprox);
@@ -736,9 +736,7 @@ Context::PixelTransferResult Context::transferPixels(Recorder* recorder,
     SkColorType supportedColorType;
     bool isRGB888Format;
     std::tie(supportedColorType, isRGB888Format) =
-            caps->supportedReadPixelsColorType(srcColorType,
-                                               srcProxy->textureInfo(),
-                                               dstColorInfo.colorType());
+            caps->supportedTransferColorType(srcColorType, srcProxy->textureInfo());
     if (supportedColorType == kUnknown_SkColorType) {
         return {};
     }
