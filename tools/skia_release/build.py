@@ -95,7 +95,6 @@ def main():
       'skia_use_system_libpng=false',
       'skia_use_system_libwebp=false',
       'skia_use_system_zlib=false',
-      'skia_use_sfntly=false',
       'skia_use_system_freetype2=false',
       'skia_use_system_harfbuzz=false',
       'skia_pdf_subset_harfbuzz=true',
@@ -160,7 +159,10 @@ def main():
           'is_trivial_abi=false',
       ]
   elif target == 'android':
-    args += ['ndk="' + ndk + '"']
+    args += [
+        'ndk="' + ndk + '"',
+        'skia_use_vulkan=true',
+    ]
   elif target == 'wasm':
     args += [
         'skia_use_dng_sdk=false',
