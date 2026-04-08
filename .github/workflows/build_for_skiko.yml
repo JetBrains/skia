@@ -4,34 +4,62 @@ on:
   push:
     branches:
       - skiko
+      - skiko-m*
   pull_request:
   workflow_dispatch:
     inputs:
-      skip_release:
-        description: 'Skip release related steps? (true/false)'
+      milestone:
+        description: 'Milestone version for manual runs (integer, for example: 146)'
         required: true
-        default: 'false'
+        type: number
+      should_release:
+        description: 'Run release related steps?'
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: write
-
-env:
-  milestone: 144
 
 jobs:
   prepare:
     runs-on: ubuntu-latest
     outputs:
+      should_release: ${{ steps.mode.outputs.should_release }}
       version: ${{ steps.version.outputs.value }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - id: milestone
+        shell: bash
+        env:
+          INPUT_MILESTONE: ${{ github.event.inputs.milestone || '' }}
+        run: |
+          if [[ "${GITHUB_REF_NAME}" == skiko-m* ]]; then
+            echo "value=${GITHUB_REF_NAME#skiko-}" >> "$GITHUB_OUTPUT"
+          elif [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            echo "value=m${INPUT_MILESTONE}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=dev" >> "$GITHUB_OUTPUT"
+          fi
+      - id: mode
+        shell: bash
+        env:
+          INPUT_SHOULD_RELEASE: ${{ inputs.should_release || false }}
+        run: |
+          if [[ "$GITHUB_REF" == refs/heads/skiko-m* ]]; then
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+          elif [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" && "$INPUT_SHOULD_RELEASE" == "true" ]]; then
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+          fi
       - id: version
         shell: bash
         run: |
           SHA="$(git rev-parse --short=10 "$GITHUB_SHA")"
-          echo "value=m${{ env.milestone }}-${SHA}" >> "$GITHUB_OUTPUT"
+          echo "value=${{ steps.milestone.outputs.value }}-${SHA}" >> "$GITHUB_OUTPUT"
 
   macos:
     needs: prepare
@@ -50,7 +78,7 @@ jobs:
         with:
           fetch-depth: 0
       - run: python3 tools/skia_release/check_release.py --skia-dir . --version ${{ needs.prepare.outputs.version }} --target ${{ matrix.target }} --build-type ${{ matrix.build_type }} --machine ${{ matrix.machine }}
-        if: ${{ github.event.inputs.skip_release != 'true' && github.ref == 'refs/heads/skiko' }}
+        if: ${{ needs.prepare.outputs.should_release == 'true' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Print Xcode version
@@ -58,12 +86,12 @@ jobs:
       - run: python3 tools/skia_release/build.py --skia-dir . --build-type ${{ matrix.build_type }} --target ${{ matrix.target }} --machine ${{ matrix.machine }}
       - run: python3 tools/skia_release/archive.py --skia-dir . --version ${{ needs.prepare.outputs.version }} --build-type ${{ matrix.build_type }} --target ${{ matrix.target }} --machine ${{ matrix.machine }}
       - uses: actions/upload-artifact@v4
-        if: ${{ github.event.inputs.skip_release != 'true' && github.ref == 'refs/heads/skiko' }}
+        if: ${{ needs.prepare.outputs.should_release == 'true' }}
         with:
           name: Skia-${{ needs.prepare.outputs.version }}-${{ matrix.target }}-${{ matrix.build_type }}-${{ matrix.machine }}.zip
           path: '*.zip'
       - run: python3 tools/skia_release/release.py --skia-dir . --version ${{ needs.prepare.outputs.version }} --build-type ${{ matrix.build_type }} --target ${{ matrix.target }} --machine ${{ matrix.machine }}
-        if: ${{ github.event.inputs.skip_release != 'true' && github.ref == 'refs/heads/skiko' }}
+        if: ${{ needs.prepare.outputs.should_release == 'true' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -81,18 +109,18 @@ jobs:
           fetch-depth: 0
       - run: ./tools/skia_release/prepare_linux.sh
       - run: python3 tools/skia_release/check_release.py --skia-dir . --version ${{ needs.prepare.outputs.version }} --build-type ${{ matrix.build_type }}
-        if: ${{ github.event.inputs.skip_release != 'true' && github.ref == 'refs/heads/skiko' }}
+        if: ${{ needs.prepare.outputs.should_release == 'true' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - run: PATH=/usr/lib/binutils-2.26/bin:$PATH python3 tools/skia_release/build.py --skia-dir . --build-type ${{ matrix.build_type }}
       - run: PATH=/usr/lib/binutils-2.26/bin:$PATH python3 tools/skia_release/archive.py --skia-dir . --version ${{ needs.prepare.outputs.version }} --build-type ${{ matrix.build_type }}
       - uses: actions/upload-artifact@v4
-        if: ${{ github.event.inputs.skip_release != 'true' && github.ref == 'refs/heads/skiko' }}
+        if: ${{ needs.prepare.outputs.should_release == 'true' }}
         with:
           name: Skia-${{ needs.prepare.outputs.version }}-linux-${{ matrix.build_type }}-x64.zip
           path: '*.zip'
       - run: python3 tools/skia_release/release.py --skia-dir . --version ${{ needs.prepare.outputs.version }} --build-type ${{ matrix.build_type }}
-        if: ${{ github.event.inputs.skip_release != 'true' && github.ref == 'refs/heads/skiko' }}
+        if: ${{ needs.prepare.outputs.should_release == 'true' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -110,18 +138,18 @@ jobs:
           fetch-depth: 0
       - run: ./tools/skia_release/prepare_linux_wasm.sh
       - run: python3 tools/skia_release/check_release.py --skia-dir . --version ${{ needs.prepare.outputs.version }} --target wasm --build-type ${{ matrix.build_type }} --machine wasm
-        if: ${{ github.event.inputs.skip_release != 'true' && github.ref == 'refs/heads/skiko' }}
+        if: ${{ needs.prepare.outputs.should_release == 'true' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - run: python3 tools/skia_release/build.py --skia-dir . --target wasm --machine wasm --build-type ${{ matrix.build_type }}
       - run: python3 tools/skia_release/archive.py --skia-dir . --version ${{ needs.prepare.outputs.version }} --target wasm --machine wasm --build-type ${{ matrix.build_type }}
       - uses: actions/upload-artifact@v4
-        if: ${{ github.event.inputs.skip_release != 'true' && github.ref == 'refs/heads/skiko' }}
+        if: ${{ needs.prepare.outputs.should_release == 'true' }}
         with:
           name: Skia-${{ needs.prepare.outputs.version }}-wasm-${{ matrix.build_type }}-wasm.zip
           path: '*.zip'
       - run: python3 tools/skia_release/release.py --skia-dir . --version ${{ needs.prepare.outputs.version }} --target wasm --machine wasm --build-type ${{ matrix.build_type }}
-        if: ${{ github.event.inputs.skip_release != 'true' && github.ref == 'refs/heads/skiko' }}
+        if: ${{ needs.prepare.outputs.should_release == 'true' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -140,7 +168,7 @@ jobs:
           fetch-depth: 0
       - run: ./tools/skia_release/prepare_linux.sh
       - run: python3 tools/skia_release/check_release.py --skia-dir . --version ${{ needs.prepare.outputs.version }} --target android --build-type ${{ matrix.build_type }} --machine ${{ matrix.machine }}
-        if: ${{ github.event.inputs.skip_release != 'true' && github.ref == 'refs/heads/skiko' }}
+        if: ${{ needs.prepare.outputs.should_release == 'true' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - uses: nttld/setup-ndk@v1
@@ -150,12 +178,12 @@ jobs:
       - run: python3 tools/skia_release/build.py --skia-dir . --target android --build-type ${{ matrix.build_type }} --machine ${{ matrix.machine }} --ndk ${{ steps.setup-ndk.outputs.ndk-path }}
       - run: python3 tools/skia_release/archive.py --skia-dir . --version ${{ needs.prepare.outputs.version }} --target android --build-type ${{ matrix.build_type }} --machine ${{ matrix.machine }}
       - uses: actions/upload-artifact@v4
-        if: ${{ github.event.inputs.skip_release != 'true' && github.ref == 'refs/heads/skiko' }}
+        if: ${{ needs.prepare.outputs.should_release == 'true' }}
         with:
           name: Skia-${{ needs.prepare.outputs.version }}-android-${{ matrix.build_type }}-${{ matrix.machine }}.zip
           path: '*.zip'
       - run: python3 tools/skia_release/release.py --skia-dir . --version ${{ needs.prepare.outputs.version }} --target android --build-type ${{ matrix.build_type }} --machine ${{ matrix.machine }}
-        if: ${{ github.event.inputs.skip_release != 'true' && github.ref == 'refs/heads/skiko' }}
+        if: ${{ needs.prepare.outputs.should_release == 'true' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -171,7 +199,7 @@ jobs:
         with:
           fetch-depth: 0
       - run: python3 tools/skia_release/check_release.py --skia-dir . --version ${{ needs.prepare.outputs.version }} --build-type ${{ matrix.build_type }} --target linux --machine arm64
-        if: ${{ github.event.inputs.skip_release != 'true' && github.ref == 'refs/heads/skiko' }}
+        if: ${{ needs.prepare.outputs.should_release == 'true' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - uses: addnab/docker-run-action@v3
@@ -187,12 +215,12 @@ jobs:
             python3 tools/skia_release/build.py --skia-dir "${SKIA_BUILD_DIR}" --build-type "${BUILD_TYPE}" --target linux --machine arm64
             python3 tools/skia_release/archive.py --skia-dir "${SKIA_BUILD_DIR}" --version "${BUILD_VERSION}" --build-type "${BUILD_TYPE}" --target linux --machine arm64
       - uses: actions/upload-artifact@v4
-        if: ${{ github.event.inputs.skip_release != 'true' && github.ref == 'refs/heads/skiko' }}
+        if: ${{ needs.prepare.outputs.should_release == 'true' }}
         with:
           name: Skia-${{ needs.prepare.outputs.version }}-linux-${{ matrix.build_type }}-arm64.zip
           path: '*.zip'
       - run: python3 tools/skia_release/release.py --skia-dir . --version ${{ needs.prepare.outputs.version }} --build-type ${{ matrix.build_type }} --target linux --machine arm64
-        if: ${{ github.event.inputs.skip_release != 'true' && github.ref == 'refs/heads/skiko' }}
+        if: ${{ needs.prepare.outputs.should_release == 'true' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -214,7 +242,7 @@ jobs:
           python-version: '3.9'
       - shell: bash
         run: python3 tools/skia_release/check_release.py --skia-dir . --version ${{ needs.prepare.outputs.version }} --build-type ${{ matrix.build_type }} --target windows --machine ${{ matrix.machine }}
-        if: ${{ github.event.inputs.skip_release != 'true' && github.ref == 'refs/heads/skiko' }}
+        if: ${{ needs.prepare.outputs.should_release == 'true' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - uses: microsoft/setup-msbuild@v1
@@ -224,12 +252,12 @@ jobs:
       - shell: bash
         run: python3 tools/skia_release/archive.py --skia-dir . --version ${{ needs.prepare.outputs.version }} --build-type ${{ matrix.build_type }} --target windows --machine ${{ matrix.machine }}
       - uses: actions/upload-artifact@v4
-        if: ${{ github.event.inputs.skip_release != 'true' && github.ref == 'refs/heads/skiko' }}
+        if: ${{ needs.prepare.outputs.should_release == 'true' }}
         with:
           name: Skia-${{ needs.prepare.outputs.version }}-windows-${{ matrix.build_type }}-${{ matrix.machine }}.zip
           path: '*.zip'
       - shell: bash
         run: python3 tools/skia_release/release.py --skia-dir . --version ${{ needs.prepare.outputs.version }} --build-type ${{ matrix.build_type }} --target windows --machine ${{ matrix.machine }}
-        if: ${{ github.event.inputs.skip_release != 'true' && github.ref == 'refs/heads/skiko' }}
+        if: ${{ needs.prepare.outputs.should_release == 'true' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
