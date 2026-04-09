@@ -174,7 +174,7 @@ jobs:
       - uses: nttld/setup-ndk@v1
         id: setup-ndk
         with:
-          ndk-version: r25c
+          ndk-version: r27d
       - run: python3 tools/skia_release/build.py --skia-dir . --target android --build-type ${{ matrix.build_type }} --machine ${{ matrix.machine }} --ndk ${{ steps.setup-ndk.outputs.ndk-path }}
       - run: python3 tools/skia_release/archive.py --skia-dir . --version ${{ needs.prepare.outputs.version }} --target android --build-type ${{ matrix.build_type }} --machine ${{ matrix.machine }}
       - uses: actions/upload-artifact@v4
