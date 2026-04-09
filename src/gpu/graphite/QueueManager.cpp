@@ -88,13 +88,17 @@ InsertStatus QueueManager::addRecording(const InsertRecordingInfo& info, Context
 
     // Configure the callback before validation so that failures are propagated to the finish
     // procs that were registered on `info` as well.
-    bool addTimerQuery = false;
+    GpuStatsFlags activeStatsFlags = GpuStatsFlags::kNone;
     sk_sp<RefCntedCallback> callback;
     if (info.fFinishedWithStatsProc) {
-        addTimerQuery = info.fGpuStatsFlags & GpuStatsFlags::kElapsedTime;
-        if (addTimerQuery && !(context->supportedGpuStats() & GpuStatsFlags::kElapsedTime)) {
-            addTimerQuery = false;
-            SKGPU_LOG_W("Requested elapsed time reporting but not supported by Context.");
+        activeStatsFlags = info.fGpuStatsFlags;
+        if (activeStatsFlags != GpuStatsFlags::kNone) {
+            GpuStatsFlags unsupportedStatsFlags = activeStatsFlags & ~context->supportedGpuStats();
+            if (unsupportedStatsFlags != GpuStatsFlags::kNone) {
+                activeStatsFlags &= ~unsupportedStatsFlags;
+                SKGPU_LOG_W("Requested GpuStats reporting (0x%x) but not supported by Context.",
+                            static_cast<uint32_t>(unsupportedStatsFlags));
+            }
         }
         callback = RefCntedCallback::Make(info.fFinishedWithStatsProc, info.fFinishedContext);
     } else if (info.fFinishedProc) {
@@ -178,8 +182,10 @@ InsertStatus QueueManager::addRecording(const InsertRecordingInfo& info, Context
 
     SIMULATE_FAIL(InsertStatus::kPromiseImageInstantiationFailed);
 
-    if (addTimerQuery) {
-        fCurrentCommandBuffer->startTimerQuery();
+    if (activeStatsFlags != GpuStatsFlags::kNone) {
+        if (!fCurrentCommandBuffer->startStatsQuery(activeStatsFlags)) {
+            activeStatsFlags = GpuStatsFlags::kNone;
+        }
     }
     fCurrentCommandBuffer->addWaitSemaphores(info.fNumWaitSemaphores, info.fWaitSemaphores);
     if (!info.fRecording->priv().addCommands(context,
@@ -190,18 +196,25 @@ InsertStatus QueueManager::addRecording(const InsertRecordingInfo& info, Context
         // If the commands failed, iterate over all the used pipelines to see if their async
         // compilation was the reason for failure. Clients that manage pipeline disk caches may
         // want to handle the failure differently than when any other GPU command failed.
+        // We will only report the 1st pipeline creation's failure message.
+        std::string failureMsg;
         const bool validPipelines = info.fRecording->priv().taskList()->visitPipelines(
-                [](const GraphicsPipeline* pipeline) {
-                    return !pipeline->didAsyncCompilationFail();
+                [&failureMsg](const GraphicsPipeline* pipeline) {
+                    if (auto failure = pipeline->didAsyncCompilationFail()) {
+                        failureMsg = *failure;
+                        return false;
+                    }
+                    return true;
                 });
 
         // We are already definitely going to fail, it's just a matter of which status to return
         RETURN_FAIL_IF(validPipelines,
                        InsertStatus::kAddCommandsFailed,
                        "Adding Recording commands to the CommandBuffer has failed");
-        RETURN_FAIL_IF(true,
-                       InsertStatus::kAsyncShaderCompilesFailed,
-                       "Async pipeline compiles failed, unable to add Recording commands");
+        RETURN_FAIL_IF(
+                true,
+                InsertStatus(InsertStatus::kAsyncShaderCompilesFailed, std::move(failureMsg)),
+                "Async pipeline compiles failed, unable to add Recording commands");
     }
 
     SIMULATE_FAIL(InsertStatus::kAddCommandsFailed);
@@ -212,8 +225,8 @@ InsertStatus QueueManager::addRecording(const InsertRecordingInfo& info, Context
         fCurrentCommandBuffer->prepareSurfaceForStateUpdate(info.fTargetSurface,
                                                             info.fTargetTextureState);
     }
-    if (addTimerQuery) {
-        fCurrentCommandBuffer->endTimerQuery();
+    if (activeStatsFlags != GpuStatsFlags::kNone) {
+        fCurrentCommandBuffer->endStatsQuery(activeStatsFlags);
     }
 
     if (callback) {

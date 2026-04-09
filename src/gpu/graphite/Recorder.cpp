@@ -25,7 +25,6 @@
 #include "include/gpu/graphite/TextureInfo.h"
 #include "src/core/SkMipmap.h"
 #include "src/core/SkTraceEvent.h"
-#include "src/gpu/AtlasTypes.h"
 #include "src/gpu/GpuTypesPriv.h"
 #include "src/gpu/RefCntedCallback.h"
 #include "src/gpu/Token.h"

@@ -302,7 +302,7 @@ void Context::asyncRescaleAndReadImpl(ReadFn Context::* asyncRead,
                                       SkImage::RescaleMode rescaleMode,
                                       const AsyncParams<SkImage>& params,
                                       ExtraArgs... extraParams) {
-    if (!params.validate()) {
+    if (!params.validate() || !as_IB(params.fSrcImage)->isGraphiteBacked()) {
         return params.fail();
     }
 
@@ -314,7 +314,7 @@ void Context::asyncRescaleAndReadImpl(ReadFn Context::* asyncRead,
     // Make a recorder to collect the rescale drawing commands and the copy commands
     std::unique_ptr<Recorder> recorder = this->makeInternalRecorder();
     sk_sp<SkImage> scaledImage = RescaleImage(recorder.get(),
-                                              params.fSrcImage,
+                                              static_cast<const Image_Base*>(params.fSrcImage),
                                               params.fSrcRect,
                                               params.fDstImageInfo,
                                               rescaleGamma,
@@ -380,7 +380,7 @@ void Context::asyncReadPixels(std::unique_ptr<Recorder> recorder,
 
     const Caps* caps = fSharedContext->caps();
     TextureProxyView view = AsView(params.fSrcImage);
-    if (!view || !caps->supportsReadPixels(view.proxy()->textureInfo())) {
+    if (!view || !caps->isCopyableSrc(view.proxy()->textureInfo())) {
         // This is either a YUVA image (null view) or the texture can't be read directly, so
         // perform a draw into a compatible texture format and/or flatten any YUVA planes to RGBA.
         if (!recorder) {
@@ -728,7 +728,7 @@ Context::PixelTransferResult Context::transferPixels(Recorder* recorder,
     SkASSERT(SkColorInfoIsValid(dstColorInfo));
 
     const Caps* caps = fSharedContext->caps();
-    if (!srcProxy || !caps->supportsReadPixels(srcProxy->textureInfo())) {
+    if (!srcProxy || !caps->isCopyableSrc(srcProxy->textureInfo())) {
         return {};
     }
 
@@ -793,10 +793,18 @@ Context::PixelTransferResult Context::transferPixels(Recorder* recorder,
     // which may be different; dstColorInfo is what we have to transform it into when invoking the
     // async callbacks.
     SkColorInfo readColorInfo = srcColorInfo.makeColorType(supportedColorType);
-    if (readColorInfo != dstColorInfo || isRGB888Format) {
+    if (readColorInfo.alphaType() == kUnknown_SkAlphaType) {
+        readColorInfo = readColorInfo.makeAlphaType(kOpaque_SkAlphaType);
+    }
+    SkColorInfo outColorInfo = dstColorInfo;
+    if (outColorInfo.alphaType() == kUnknown_SkAlphaType) {
+        outColorInfo = outColorInfo.makeAlphaType(kOpaque_SkAlphaType);
+    }
+    if (readColorInfo != outColorInfo || isRGB888Format) {
         SkISize dims = srcRect.size();
         SkImageInfo srcInfo = SkImageInfo::Make(dims, readColorInfo);
-        SkImageInfo dstInfo = SkImageInfo::Make(dims, dstColorInfo);
+        SkImageInfo dstInfo = SkImageInfo::Make(dims, outColorInfo);
+
         result.fRowBytes = dstInfo.minRowBytes();
         result.fPixelConverter = [dstInfo, srcInfo, rowBytes, isRGB888Format](
                 void* dst, const void* src) {
@@ -975,7 +983,7 @@ bool ContextPriv::readPixels(const SkPixmap& pm,
     // This is roughly equivalent to the logic taken in asyncRescaleAndRead(SkSurface) to either
     // try the image-based readback (with copy-as-draw fallbacks) or read the texture directly
     // if it supports reading.
-    if (!fContext->fSharedContext->caps()->supportsReadPixels(textureProxy->textureInfo())) {
+    if (!fContext->fSharedContext->caps()->isCopyableSrc(textureProxy->textureInfo())) {
         // Since this is a synchronous testing-only API, callers should have flushed any pending
         // work that modifies this texture proxy already. This means we don't have to worry about
         // re-wrapping the proxy in a new Image (that wouldn't tbe connected to any Device, etc.).

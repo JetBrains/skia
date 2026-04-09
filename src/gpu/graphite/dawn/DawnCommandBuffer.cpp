@@ -67,7 +67,14 @@ DawnCommandBuffer::DawnCommandBuffer(const DawnSharedContext* sharedContext,
 
 DawnCommandBuffer::~DawnCommandBuffer() {}
 
-bool DawnCommandBuffer::startTimerQuery() {
+bool DawnCommandBuffer::startStatsQuery(GpuStatsFlags) {
+    if (fHasStatsQuery) {
+        SKGPU_LOG_W(
+                "startTimerQuery called more than once for the same command "
+                "buffer. Currently, stats queries are only supported when "
+                "each recording gets its own submission.");
+        return false;
+    }
     wgpu::QuerySet querySet = std::move(fTimestampQuerySet);
 
     auto buffer = fResourceProvider->findOrCreateDawnBuffer(2 * sizeof(uint64_t),
@@ -120,10 +127,12 @@ bool DawnCommandBuffer::startTimerQuery() {
         fWroteFirstPassTimestamps = false;
     }
 
+    fHasStatsQuery = true;
     return true;
 }
 
-void DawnCommandBuffer::endTimerQuery() {
+void DawnCommandBuffer::endStatsQuery(GpuStatsFlags) {
+    // Only called if startTimerQuery succeeded.
     SkASSERT(fTimestampQuerySet);
     SkASSERT(fTimestampQueryBuffer);
     if (fSharedContext->dawnCaps()->supportsCommandBufferTimestamps()) {
@@ -181,6 +190,7 @@ wgpu::CommandBuffer DawnCommandBuffer::finishEncoding() {
     wgpu::CommandBuffer cmdBuffer = fCommandEncoder.Finish();
 
     fCommandEncoder = nullptr;
+    fResourceProvider->releasePendingIntrinsicBuffers();
 
     return cmdBuffer;
 }
@@ -204,6 +214,7 @@ void DawnCommandBuffer::onResetCommandBuffer() {
     fTimestampQueryBuffer = {};
     fTimestampQueryXferBuffer = {};
     fWroteFirstPassTimestamps = false;
+    fHasStatsQuery = false;
 }
 
 bool DawnCommandBuffer::setNewCommandBufferResources() {
@@ -223,7 +234,7 @@ const DawnSampler* DawnCommandBuffer::getSampler(
     if (desc.isImmutable()) {
         const DawnSampler* immutableSampler = fActiveGraphicsPipeline->immutableSampler(index);
         if (immutableSampler) {
-            this->trackCommandBufferResource(sk_ref_sp<Sampler>(immutableSampler));
+            this->trackResource(sk_ref_sp<Sampler>(immutableSampler));
         }
         return immutableSampler;
     } else {
@@ -614,6 +625,7 @@ bool DawnCommandBuffer::endRenderPass() {
             SampleCount::k1 };
 
     wgpu::RenderPassColorAttachment dawnIntermediateColorAttachment;
+    dawnIntermediateColorAttachment.clearValue = {0.f, 0.f, 0.f, 0.f}; // ignored
     dawnIntermediateColorAttachment.loadOp = wgpu::LoadOp::Load;
     dawnIntermediateColorAttachment.storeOp = wgpu::StoreOp::Store;
     dawnIntermediateColorAttachment.view =

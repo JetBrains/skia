@@ -1,4 +1,4 @@
-FROM gcr.io/skia-public/skottie-base@sha256:af6d4026789b64b65b0bbbc54a8f7a96a7657818566f1fc7a7814c371f40e749
+FROM gcr.io/skia-public/skottie-base@sha256:59099cc38eafa7b82ff8a37aff2a2e7b24a9416af32b565e8f5dc202d0457da4
 
 COPY canvaskit.js /usr/local/share/skottie/canvaskit.js
 COPY canvaskit.wasm /usr/local/share/skottie/canvaskit.wasm
