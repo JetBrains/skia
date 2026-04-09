@@ -193,11 +193,6 @@ def main():
         'extra_cflags+=["-DSK_SUPPORT_GPU=1", "-DSK_GL", "-DSK_DISABLE_LEGACY_SHADERCONTEXT", "-sSUPPORT_LONGJMP=wasm"]',
     ]
 
-  args += [
-      'extra_cflags+=["-USK_HIDE_PATH_EDIT_METHODS"]',
-      'extra_cflags_cc+=["-USK_HIDE_PATH_EDIT_METHODS"]',
-  ]
-
   out = os.path.join('out', build_type + '-' + target + '-' + machine)
   gn = 'gn.exe' if host == 'windows' else 'gn'
   gn_cmd = [os.path.join('bin', gn), 'gen', out, '--args=' + ' '.join(args)]
