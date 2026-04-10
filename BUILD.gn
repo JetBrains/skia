@@ -738,11 +738,13 @@ if (skia_compile_sksl_tests) {
     include_dirs = [ "." ]
     deps = [
       ":run_sksllex",
-      "//third_party/dawn:tint",
       "//third_party/externals/spirv-tools:spvtools",
       "//third_party/externals/spirv-tools:spvtools_val",
       "//third_party/spirv-cross:spirv_cross",
     ]
+    if (skia_use_dawn && !is_wasm) {
+          deps += [ "//third_party/dawn:tint" ]
+    }
   }
 
   skslc_path = "$root_out_dir/"
@@ -897,7 +899,9 @@ optional("gpu_shared") {
 
   if (skia_use_dawn) {
     public_defines += [ "SK_DAWN" ]
-    public_deps += [ "//third_party/dawn" ]
+    if (!is_wasm) {
+          public_deps += [ "//third_party/dawn" ]
+    }
   }
 
   if (skia_use_direct3d) {
@@ -2326,7 +2330,7 @@ skia_source_set("public_headers_warnings_check") {
     "modules/skshaper",
   ]
 
-  if (skia_use_dawn) {
+  if (skia_use_dawn && !is_wasm) {
     deps += [ "//third_party/dawn" ]
   }
 }
@@ -2354,7 +2358,7 @@ if (((skia_enable_fontmgr_fontconfig && skia_use_freetype) ||
       ":skia",
       ":skia.h",
     ]
-    if (skia_use_dawn) {
+    if (skia_use_dawn && !is_wasm) {
       deps += [ "//third_party/dawn" ]
     }
   }
@@ -2570,7 +2574,7 @@ if (skia_enable_tools) {
         all_dependent_configs += [ ":vulkan_memory_allocator" ]
       }
 
-      if (skia_use_dawn) {
+      if (skia_use_dawn && !is_wasm) {
         public_deps += [ "//third_party/dawn" ]
         if (is_clang) {
           cflags_cc = [ "-Wno-microsoft-cast" ]
