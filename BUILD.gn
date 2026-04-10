@@ -1154,7 +1154,8 @@ if (skia_enable_ganesh && skia_gpu_as_extension) {
 
     if (skia_use_direct3d) {
       deps += [ "//third_party/d3d12allocator" ]
-      sources += skia_direct3d_sources
+      public += skia_ganesh_d3d_public
+      sources += skia_ganesh_d3d_private
       libs += [
         "d3d12.lib",
         "dxgi.lib",
