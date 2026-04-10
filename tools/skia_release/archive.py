@@ -27,7 +27,7 @@ def main():
   out_bin = 'out/' + build_type + '-' + target + '-' + machine
 
   globs = [
-      out_bin + '/gen/third_party/dawn/include',
+      out_bin + '/gen/third_party/dawn/include/**/*',
       out_bin + '/*.a',
       out_bin + '/*.a.wasm', # TODO: temporary for m147, in the next release it change it to '.wasm.a'
       out_bin + '/*.lib',
