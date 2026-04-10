@@ -83,7 +83,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Print Xcode version
         run: xcodebuild -version
-      - run: python3 tools/skia_release/build.py --skia-dir . --build-type ${{ matrix.build_type }} --target ${{ matrix.target }} --machine ${{ matrix.machine }}
+      - run: python3 tools/skia_release/build.py --skia-dir . --build-type ${{ matrix.build_type }} --target ${{ matrix.target }} --machine ${{ matrix.machine }} --gpu-as-extension --enable-graphite ${{ matrix.target == 'macos' && '--enable-graphite-dawn' || '' }}
       - run: python3 tools/skia_release/archive.py --skia-dir . --version ${{ needs.prepare.outputs.version }} --build-type ${{ matrix.build_type }} --target ${{ matrix.target }} --machine ${{ matrix.machine }}
       - uses: actions/upload-artifact@v4
         if: ${{ needs.prepare.outputs.should_release == 'true' }}
@@ -112,7 +112,7 @@ jobs:
         if: ${{ needs.prepare.outputs.should_release == 'true' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - run: PATH=/usr/lib/binutils-2.26/bin:$PATH python3 tools/skia_release/build.py --skia-dir . --build-type ${{ matrix.build_type }}
+      - run: PATH=/usr/lib/binutils-2.26/bin:$PATH python3 tools/skia_release/build.py --skia-dir . --build-type ${{ matrix.build_type }} --gpu-as-extension --enable-graphite-dawn
       - run: PATH=/usr/lib/binutils-2.26/bin:$PATH python3 tools/skia_release/archive.py --skia-dir . --version ${{ needs.prepare.outputs.version }} --build-type ${{ matrix.build_type }}
       - uses: actions/upload-artifact@v4
         if: ${{ needs.prepare.outputs.should_release == 'true' }}
@@ -141,7 +141,7 @@ jobs:
         if: ${{ needs.prepare.outputs.should_release == 'true' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - run: python3 tools/skia_release/build.py --skia-dir . --target wasm --machine wasm --build-type ${{ matrix.build_type }}
+      - run: python3 tools/skia_release/build.py --skia-dir . --target wasm --machine wasm --build-type ${{ matrix.build_type }} --gpu-as-extension --enable-graphite-dawn
       - run: python3 tools/skia_release/archive.py --skia-dir . --version ${{ needs.prepare.outputs.version }} --target wasm --machine wasm --build-type ${{ matrix.build_type }}
       - uses: actions/upload-artifact@v4
         if: ${{ needs.prepare.outputs.should_release == 'true' }}
@@ -175,7 +175,7 @@ jobs:
         id: setup-ndk
         with:
           ndk-version: r27d
-      - run: python3 tools/skia_release/build.py --skia-dir . --target android --build-type ${{ matrix.build_type }} --machine ${{ matrix.machine }} --ndk ${{ steps.setup-ndk.outputs.ndk-path }}
+      - run: python3 tools/skia_release/build.py --skia-dir . --target android --build-type ${{ matrix.build_type }} --machine ${{ matrix.machine }} --ndk ${{ steps.setup-ndk.outputs.ndk-path }} --gpu-as-extension --enable-graphite-dawn
       - run: python3 tools/skia_release/archive.py --skia-dir . --version ${{ needs.prepare.outputs.version }} --target android --build-type ${{ matrix.build_type }} --machine ${{ matrix.machine }}
       - uses: actions/upload-artifact@v4
         if: ${{ needs.prepare.outputs.should_release == 'true' }}
@@ -212,7 +212,7 @@ jobs:
             set -euo pipefail
             cd /workspace
             /bin/bash tools/skia_release/prepare_linux_arm.sh
-            python3 tools/skia_release/build.py --skia-dir "${SKIA_BUILD_DIR}" --build-type "${BUILD_TYPE}" --target linux --machine arm64
+            python3 tools/skia_release/build.py --skia-dir "${SKIA_BUILD_DIR}" --build-type "${BUILD_TYPE}" --target linux --machine arm64 --gpu-as-extension --enable-graphite-dawn
             python3 tools/skia_release/archive.py --skia-dir "${SKIA_BUILD_DIR}" --version "${BUILD_VERSION}" --build-type "${BUILD_TYPE}" --target linux --machine arm64
       - uses: actions/upload-artifact@v4
         if: ${{ needs.prepare.outputs.should_release == 'true' }}
@@ -248,7 +248,7 @@ jobs:
       - uses: microsoft/setup-msbuild@v1
       - uses: ilammy/msvc-dev-cmd@v1
       - shell: bash
-        run: python3 tools/skia_release/build.py --skia-dir . --build-type ${{ matrix.build_type }} --target windows --machine ${{ matrix.machine }}
+        run: python3 tools/skia_release/build.py --skia-dir . --build-type ${{ matrix.build_type }} --target windows --machine ${{ matrix.machine }} --gpu-as-extension --enable-graphite-dawn
       - shell: bash
         run: python3 tools/skia_release/archive.py --skia-dir . --version ${{ needs.prepare.outputs.version }} --build-type ${{ matrix.build_type }} --target windows --machine ${{ matrix.machine }}
       - uses: actions/upload-artifact@v4
