@@ -169,8 +169,6 @@ def main():
           'is_trivial_abi=false',
       ]
   elif target == 'android':
-    if enable_graphite_dawn:
-      args += ['dawn_enable_vulkan=true']
     args += [
         'ndk="' + ndk + '"',
         'skia_use_vulkan=true',
