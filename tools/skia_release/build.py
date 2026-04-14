@@ -134,8 +134,8 @@ def main():
     else:
       args += ['extra_cflags+=["-stdlib=libc++", "-mmacosx-version-min=10.13"]']
   elif target == 'linux':
-    if enable_graphite_dawn:
-        args += ['dawn_enable_vulkan=true', 'dawn_use_x11=true']
+    if enable_graphite:
+      args += ['skia_use_vulkan=true']
     if machine == 'arm64':
       args += [
           'skia_gl_standard="gles"',
