@@ -178,6 +178,7 @@ def main():
       args += ['skia_use_webgpu=true']
     args += [
         'skia_use_dng_sdk=false',
+        'skia_use_freetype=true',
         'skia_use_libjpeg_turbo_decode=true',
         'skia_use_libjpeg_turbo_encode=true',
         'skia_use_libpng_decode=true',
