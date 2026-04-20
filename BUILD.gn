@@ -1060,6 +1060,10 @@ optional("gpu") {
   }
 }
 
+# Copy of optional("gpu") logic found above. It's a copy because
+# reusing the definitions directly would introduce a non-trivial diff
+# that will be hard to merge later.
+# Keep it in sync when updating Ganesh sources or dependencies.
 if (skia_enable_ganesh && skia_gpu_as_extension) {
   config("skia_ganesh_ext_public") {
     defines = [ "SK_GANESH" ]
@@ -1341,6 +1345,10 @@ optional("graphite") {
   }
 }
 
+# Copy of optional("graphite") logic found above. It's a copy because
+# reusing the definitions directly would introduce a non-trivial diff
+# that will be hard to merge later.
+# Keep it in sync when updating Graphite sources or dependencies.
 if (skia_enable_graphite && skia_gpu_as_extension) {
   config("skia_graphite_ext_public") {
     defines = [ "SK_GRAPHITE" ]
