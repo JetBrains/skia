@@ -27,7 +27,9 @@ def main():
   out_bin = 'out/' + build_type + '-' + target + '-' + machine
 
   globs = [
+      out_bin + '/gen/third_party/dawn/include/**/*',
       out_bin + '/*.a',
+      out_bin + '/*.a.wasm', # TODO: temporary for m147, in the next release, change it to '.wasm.a'
       out_bin + '/*.lib',
       out_bin + '/icudtl.dat',
       'include/**/*',
@@ -86,16 +88,20 @@ def main():
 
   with zipfile.ZipFile(skia_dir / dist, 'w', compression=zipfile.ZIP_DEFLATED) as zip_file:
     dirs = set()
+    files = set()
     for glob in globs:
       for path in pathlib.Path(skia_dir).glob(glob):
         if path.is_dir():
           continue
         relative_path = path.relative_to(skia_dir)
+        if relative_path in files:
+          continue
         for directory in parents(relative_path):
           if directory not in dirs:
             zip_file.write(skia_dir / directory, arcname=str(directory))
             dirs.add(directory)
         zip_file.write(path, arcname=str(relative_path))
+        files.add(relative_path)
 
   return 0
 
