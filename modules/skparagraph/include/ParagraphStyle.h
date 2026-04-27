@@ -1,4 +1,4 @@
-// Copyright 2019 Google LLC.
+// Copyright 2019 Google LLC
 #ifndef ParagraphStyle_DEFINED
 #define ParagraphStyle_DEFINED
 
@@ -146,6 +146,9 @@ struct ParagraphStyle {
     bool getApplyRoundingHack() const { return fApplyRoundingHack; }
     void setApplyRoundingHack(bool value) { fApplyRoundingHack = value; }
 
+    bool getLetterSpacingByCSSSpec() const { return fLetterSpacingByCSSSpec; }
+    void setLetterSpacingByCSSSpec(bool value) { fLetterSpacingByCSSSpec = value; }
+
     const TextIndent& getTextIndent() const { return fTextIndent; }
     void setTextIndent(const TextIndent& textIndent) { fTextIndent = textIndent; }
 
@@ -164,6 +167,7 @@ private:
     bool fReplaceTabCharacters;
     bool fFakeMissingFontStyles;
     bool fApplyRoundingHack = true;
+    bool fLetterSpacingByCSSSpec = false;
 
     // common part of equals and equalsByLayout
     bool almostEquals(const ParagraphStyle& rhs) const;

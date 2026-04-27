@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Google Inc.
+ * Copyright 2020 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -73,7 +73,7 @@ class DirectMaskGlyphVertexFillBenchmark : public Benchmark {
                 sktext::gpu::TextBlobTools::FirstSubRun(fBlob.get());
         SkASSERT_RELEASE(subRun);
         if (!subRun->glyphVector().hasBackendData()) {
-            subRun->glyphVector().initBackendData<GlyphData>(&fCache);
+            subRun->glyphVector().initBackendData<GlyphData>(&fCache, subRun->maskFormat());
         }
         const auto& glyphData = subRun->glyphVector().accessBackendData<GlyphData>();
         fVertices.reset(new char[glyphData.vertexStride(subRun->maskFormat(), drawMatrix) *

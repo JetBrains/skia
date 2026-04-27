@@ -150,7 +150,9 @@ public:
         SkASSERT(!fLockStride && !fVertices && !fVertexBuffer && !fVertexData);
         SkASSERT(stride && eagerCount);
 
-        size_t size = eagerCount * stride;
+        // Matches sk_malloc_throw(stride, count) but lets use the size earlier.
+        size_t size = SkSafeMath::Mul(eagerCount, stride);
+
         fVertexBuffer = fResourceProvider->createBuffer(size,
                                                         GrGpuBufferType::kVertex,
                                                         kStatic_GrAccessPattern,
@@ -162,7 +164,7 @@ public:
             fVertices = fVertexBuffer->map();
         }
         if (!fVertices) {
-            fVertices = sk_malloc_throw(eagerCount * stride);
+            fVertices = sk_malloc_throw(size);
             fCanMapVB = false;
         }
         fLockStride = stride;
@@ -282,8 +284,7 @@ private:
         bool inverseFill = shape.inverseFilled();
 
         static constexpr int kClipBoundsCnt = sizeof(devClipBounds) / sizeof(uint32_t);
-        int shapeKeyDataCnt = shape.unstyledKeySize();
-        SkASSERT(shapeKeyDataCnt >= 0);
+        uint16_t shapeKeyDataCnt = shape.unstyledKeySize();
         skgpu::UniqueKey::Builder builder(key, kDomain, shapeKeyDataCnt + kClipBoundsCnt, "Path");
         shape.writeUnstyledKey(&builder[0]);
         // For inverse fills, the tessellation is dependent on clip bounds.

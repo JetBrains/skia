@@ -223,7 +223,7 @@ GraphiteResourceKey build_desc_set_key(const SkSpan<DescriptorData>& requestedDe
     }
 
     GraphiteResourceKey key;
-    GraphiteResourceKey::Builder builder(&key, kType, keyData.size());
+    GraphiteResourceKey::Builder builder(&key, kType, SkTo<uint16_t>(keyData.size()));
 
     for (int i = 0; i < keyData.size(); i++) {
         builder[i] = keyData[i];
@@ -255,9 +255,8 @@ sk_sp<VulkanDescriptorSet> VulkanResourceProvider::findOrCreateDescriptorSet(
 
     // Search for available descriptor sets by assembling a key based upon the set's structure.
     GraphiteResourceKey key = build_desc_set_key(requestedDescriptors);
-    if (auto descSet = fResourceCache->findAndRefResource(
-                key, skgpu::Budgeted::kYes, Shareable::kNo)) {
-        // A non-null resource pointer indicates we have found an available descriptor set.
+    if (auto descSet =
+            fResourceCache->findAndRefResource(key, skgpu::Budgeted::kYes, Shareable::kNo)) {
         return sk_sp<VulkanDescriptorSet>(static_cast<VulkanDescriptorSet*>(descSet));
     }
 
@@ -571,7 +570,7 @@ sk_sp<VulkanYcbcrConversion> VulkanResourceProvider::findOrCreateCompatibleYcbcr
     GraphiteResourceKey key;
     {
         static const ResourceType kType = GraphiteResourceKey::GenerateResourceType();
-        static constexpr int kKeySize = 3;
+        static constexpr uint16_t kKeySize = 3;
 
         GraphiteResourceKey::Builder builder(&key, kType, kKeySize);
         ImmutableSamplerInfo packedInfo = VulkanYcbcrConversion::ToImmutableSamplerInfo(ycbcrInfo);

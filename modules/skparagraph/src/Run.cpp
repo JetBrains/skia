@@ -1,4 +1,4 @@
-// Copyright 2019 Google LLC.
+// Copyright 2019 Google LLC
 #include "include/core/SkFontMetrics.h"
 #include "include/core/SkTextBlob.h"
 #include "include/private/base/SkFloatingPoint.h"
@@ -174,10 +174,6 @@ void Run::addSpacesAtTheEnd(SkScalar space, Cluster* cluster) {
 }
 
 SkScalar Run::addLetterSpacesEvenly(SkScalar space) {
-    if (this->isCursiveScript()) {
-        // Do not apply letter spacing for script languages
-        return 0.0;
-    }
     SkScalar shift = 0;
     for (size_t i = 0; i < this->size(); ++i) {
         fPositions[i].fX += shift;
@@ -189,10 +185,6 @@ SkScalar Run::addLetterSpacesEvenly(SkScalar space) {
 }
 
 SkScalar Run::addLetterSpacesEvenly(SkScalar space, Cluster* cluster) {
-    if (this->isCursiveScript()) {
-        // Do not apply letter spacing for script languages
-        return 0.0;
-    }
     // Offset all the glyphs in the cluster
     SkScalar shift = 0;
     for (size_t i = cluster->startPos(); i < cluster->endPos(); ++i) {
