@@ -11,6 +11,7 @@ config("public_config") {
 
 skia_component("sksg") {
   check_includes = false
+  complete_static_lib = false
   import("sksg.gni")
   public_configs = [ ":public_config" ]
   sources = skia_sksg_sources
