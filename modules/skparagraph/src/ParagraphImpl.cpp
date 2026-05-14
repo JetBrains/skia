@@ -917,7 +917,8 @@ PositionWithAffinity ParagraphImpl::getGlyphPositionAtCoordinate(SkScalar dx, Sk
         // (or the first one, or the only one - all the same)
 
         auto result = line.getGlyphPositionAtCoordinate(dx);
-
+        //SkDebugf("getGlyphPositionAtCoordinate(%f, %f): %d %s\n", dx, dy, result.position,
+        //   result.affinity == Affinity::kUpstream ? "up" : "down");
 
         // Snap caret out of the middle of a grapheme cluster (CMP-8054):
         // e.g. between a base char and a non-spacing mark such as the devanagari
