@@ -930,7 +930,7 @@ PositionWithAffinity ParagraphImpl::getGlyphPositionAtCoordinate(SkScalar dx, Sk
                 if (utf8 < fText.size() &&
                     (fCodeUnitProperties[utf8] & SkUnicode::CodeUnitFlags::kGraphemeStart) == 0) {
                     TextIndex snapped = this->findNextGraphemeBoundary(utf8);
-                    result = { SkToS32(this->getUTF16Index(snapped)), Affinity::kDownstream };
+                    result = { SkToS32(this->getUTF16Index(snapped)), result.affinity };
                 }
             }
         }
