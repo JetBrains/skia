@@ -921,8 +921,9 @@ PositionWithAffinity ParagraphImpl::getGlyphPositionAtCoordinate(SkScalar dx, Sk
         //   result.affinity == Affinity::kUpstream ? "up" : "down");
 
         // Snap caret out of the middle of a grapheme cluster (CMP-8054):
-        // e.g. between a base char and a non-spacing mark such as the devanagari
-        // virama. Caret positions inside a grapheme are not selectable.
+        // e.g. between a base char and a non-spacing mark such as the combining
+        // double acute (U+030B) or the devanagari virama (U+094D). Caret positions
+        // inside a grapheme are not selectable.
         if (result.position >= 0) {
             size_t utf16Idx = SkToSizeT(result.position);
             if (utf16Idx < SkToSizeT(fUTF8IndexForUTF16Index.size())) {
