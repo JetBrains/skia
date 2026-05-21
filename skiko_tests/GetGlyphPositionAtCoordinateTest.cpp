@@ -33,6 +33,8 @@ DEF_TEST_SKIKO(getGlyphPosition_combiningDoubleAcute_notMidGrapheme, reporter) {
     sk_sp<TestFontCollection> fonts =
             sk_make_sp<TestFontCollection>(GetResourcePath("fonts").c_str(), false, true);
     if (fonts->fontsFound() == 0) {
+        ERRORF(reporter, "Skiko_getGlyphPosition_combiningDoubleAcute_notMidGrapheme "
+                         "requires fonts in resources/fonts/, none found");
         return;
     }
 
@@ -51,14 +53,15 @@ DEF_TEST_SKIKO(getGlyphPosition_combiningDoubleAcute_notMidGrapheme, reporter) {
     paragraph->layout(1000);
 
     auto boxes = paragraph->getRectsForRange(1, 3, RectHeightStyle::kTight, RectWidthStyle::kTight);
-    if (boxes.empty()) {
-        return;
-    }
-    const SkRect& clusterRect = boxes[0].rect;
-    SkScalar midX = (clusterRect.fLeft + clusterRect.fRight) / 2.0f;
-    SkScalar midY = (clusterRect.fTop + clusterRect.fBottom) / 2.0f;
+    REPORTER_ASSERT(reporter, !boxes.empty(),
+                    "getRectsForRange returned no boxes for the target cluster");
+    if (!boxes.empty()) {
+        const SkRect& clusterRect = boxes[0].rect;
+        SkScalar midX = (clusterRect.fLeft + clusterRect.fRight) / 2.0f;
+        SkScalar midY = (clusterRect.fTop + clusterRect.fBottom) / 2.0f;
 
-    auto position = paragraph->getGlyphPositionAtCoordinate(midX, midY).position;
-    REPORTER_ASSERT(reporter, position != 2,
-                    "mid-cluster click returned position %d (mid-grapheme)", position);
+        auto position = paragraph->getGlyphPositionAtCoordinate(midX, midY).position;
+        REPORTER_ASSERT(reporter, position != 2,
+                        "mid-cluster click returned position %d (mid-grapheme)", position);
+    }
 }
