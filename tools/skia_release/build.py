@@ -110,7 +110,7 @@ def main():
 
   if is_macos or is_ios or is_tvos:
     if is_macos:
-      args += ['skia_use_fonthost_mac=true']
+      args += ['skia_use_fonthost_mac=true', 'skia_use_vulkan=true']
       if enable_graphite_dawn:
         args += ['dawn_enable_metal=true']
     args += ['extra_cflags_cc+=["-frtti"]']
