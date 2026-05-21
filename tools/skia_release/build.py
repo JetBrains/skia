@@ -154,6 +154,7 @@ def main():
       args += ['dawn_enable_d3d11=true', 'dawn_enable_d3d12=true']
     args += [
         'skia_use_direct3d=true',
+        'skia_use_vulkan=true',
         'extra_cflags+=["-DSK_FONT_HOST_USE_SYSTEM_SETTINGS"]',
     ]
     if host == 'windows':
