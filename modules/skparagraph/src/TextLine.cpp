@@ -1506,6 +1506,9 @@ PositionWithAffinity TextLine::getGlyphPositionAtCoordinate(SkScalar dx) {
                 auto graphemes = fOwner->countSurroundingGraphemes({clusterIndex8, clusterEnd8});
 
                 SkScalar center = glyphemePosLeft + glyphemesWidth / 2;
+                if (SkScalarNearlyEqual(center, dx, 0.01f)) {
+                    center = dx;
+                }
                 if (graphemes.size() > 1) {
                     // Calculate the position proportionally based on grapheme count
                     SkScalar averageGraphemeWidth = glyphemesWidth / graphemes.size();
@@ -1515,8 +1518,16 @@ PositionWithAffinity TextLine::getGlyphPositionAtCoordinate(SkScalar dx) {
                                          : SkScalarFloorToInt(delta / averageGraphemeWidth);
                     auto graphemeCenter = glyphemePosLeft + graphemeIndex * averageGraphemeWidth +
                                           averageGraphemeWidth / 2;
+                    if (SkScalarNearlyEqual(graphemeCenter, dx, 0.01f)) {
+                        graphemeCenter = dx;
+                    }
                     auto graphemeUtf8Index = graphemes[graphemeIndex];
-                    if ((dx < graphemeCenter) == context.run->leftToRight()) {
+                    // Tie at exact midpoint → before-char (Android convention). Asymmetric form
+                    // keeps RTL behavior unchanged; only LTR midpoint is affected.
+                    bool dxBeforeCenter = context.run->leftToRight()
+                                                ? (dx <= graphemeCenter)
+                                                : (dx >= graphemeCenter);
+                    if (dxBeforeCenter) {
                         size_t utf16Index = fOwner->getUTF16Index(graphemeUtf8Index);
                         result = { SkToS32(utf16Index), kDownstream };
                     } else {
@@ -1524,7 +1535,9 @@ PositionWithAffinity TextLine::getGlyphPositionAtCoordinate(SkScalar dx) {
                         result = { SkToS32(utf16Index), kUpstream };
                     }
                     // Keep UTF16 index as is
-                } else if ((dx < center) == context.run->leftToRight()) {
+                } else if (context.run->leftToRight()
+                                ? (dx <= center)
+                                : (dx >= center)) {
                     size_t utf16Index = fOwner->getUTF16Index(clusterIndex8);
                     result = { SkToS32(utf16Index), kDownstream };
                 } else {

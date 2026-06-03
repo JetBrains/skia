@@ -65,3 +65,104 @@ DEF_TEST_SKIKO(getGlyphPosition_combiningDoubleAcute_notMidGrapheme, reporter) {
                         "mid-cluster click returned position %d (mid-grapheme)", position);
     }
 }
+
+// Tie-break: when the click x lands exactly on the geometric midpoint of a glyph,
+// the two candidate caret positions (before-char and after-char) are equidistant.
+// Android's Layout.getOffsetForHorizontal resolves this tie to the before-char side
+// (Math.abs-distance comparison with strict `<` update keeps the earlier-encountered
+// offset = the one to the visual left for LTR). Skia historically resolved it to
+// after-char via `(dx < center) == leftToRight()`, which strictly fails at midpoint
+// and falls through to the else branch.
+//
+// This test pins the Android-compatible behavior: clicking at the exact horizontal
+// midpoint of glyph 'a' in "abc" yields offset 0 (before 'a'), not 1 (after 'a').
+DEF_TEST_SKIKO(getGlyphPosition_midpointTieBreak_ltr_landsBeforeChar, reporter) {
+    auto factory = SkShapers::BestAvailable();
+    sk_sp<SkUnicode> unicode = sk_ref_sp<SkUnicode>(factory->getUnicode());
+    sk_sp<TestFontCollection> fonts =
+            sk_make_sp<TestFontCollection>(GetResourcePath("fonts").c_str(), false, true);
+    if (fonts->fontsFound() == 0) {
+        ERRORF(reporter, "Skiko_getGlyphPosition_midpointTieBreak_ltr_landsBeforeChar "
+                         "requires fonts in resources/fonts/, none found");
+        return;
+    }
+
+    ParagraphStyle paragraphStyle;
+    TextStyle textStyle;
+    textStyle.setFontFamilies({SkString("Roboto")});
+    textStyle.setFontSize(50);
+    textStyle.setColor(SK_ColorBLACK);
+
+    const char* text = "abc";
+    ParagraphBuilderImpl builder(paragraphStyle, fonts, unicode);
+    builder.pushStyle(textStyle);
+    builder.addText(text, strlen(text));
+    builder.pop();
+    auto paragraph = builder.Build();
+    paragraph->layout(1000);
+
+    // Locate the exact midpoint of glyph 'a' via getRectsForRange.
+    auto boxes = paragraph->getRectsForRange(0, 1, RectHeightStyle::kTight, RectWidthStyle::kTight);
+    REPORTER_ASSERT(reporter, !boxes.empty(),
+                    "getRectsForRange returned no boxes for glyph 'a'");
+    if (!boxes.empty()) {
+        const SkRect& aRect = boxes[0].rect;
+        SkScalar midX = (aRect.fLeft + aRect.fRight) / 2.0f;
+        SkScalar midY = (aRect.fTop + aRect.fBottom) / 2.0f;
+
+        auto position = paragraph->getGlyphPositionAtCoordinate(midX, midY).position;
+        REPORTER_ASSERT(reporter, position == 0,
+                        "midpoint click returned position %d, expected 0 (before-char)", position);
+    }
+}
+
+// Companion regression test for the RTL side of midpoint tie-break: Skia historically
+// returned the before-logical offset at the exact midpoint of an RTL glyph (via the
+// original `(dx < center) == leftToRight()` evaluating to T == T → if-branch at midpoint),
+// and the asymmetric fix preserves this behavior — only the LTR side is changed. This test
+// pins the RTL outcome so future refactors don't accidentally flip it.
+//
+// Text "אבג" laid out as RTL; clicking the exact horizontal midpoint of the middle glyph
+// ב (UTF-16 index 1) should yield offset 1 (before-ב logically = visually right of ב).
+DEF_TEST_SKIKO(getGlyphPosition_midpointTieBreak_rtl_landsBeforeChar, reporter) {
+    auto factory = SkShapers::BestAvailable();
+    sk_sp<SkUnicode> unicode = sk_ref_sp<SkUnicode>(factory->getUnicode());
+    sk_sp<TestFontCollection> fonts =
+            sk_make_sp<TestFontCollection>(GetResourcePath("fonts").c_str(), false, true);
+    if (fonts->fontsFound() == 0) {
+        ERRORF(reporter, "Skiko_getGlyphPosition_midpointTieBreak_rtl_landsBeforeChar "
+                         "requires fonts in resources/fonts/, none found");
+        return;
+    }
+
+    ParagraphStyle paragraphStyle;
+    paragraphStyle.setTextDirection(TextDirection::kRtl);
+    TextStyle textStyle;
+    textStyle.setFontFamilies({SkString("Roboto")});
+    textStyle.setFontSize(50);
+    textStyle.setColor(SK_ColorBLACK);
+
+    // אבג — Hebrew Aleph, Bet, Gimel. Escaped to avoid relying on source-file encoding.
+    const char* text = "אבג";
+    ParagraphBuilderImpl builder(paragraphStyle, fonts, unicode);
+    builder.pushStyle(textStyle);
+    builder.addText(text, strlen(text));
+    builder.pop();
+    auto paragraph = builder.Build();
+    paragraph->layout(1000);
+
+    // Locate the exact midpoint of ב (the middle glyph, UTF-16 index 1).
+    auto boxes = paragraph->getRectsForRange(1, 2, RectHeightStyle::kTight, RectWidthStyle::kTight);
+    REPORTER_ASSERT(reporter, !boxes.empty(),
+                    "getRectsForRange returned no boxes for ב");
+    if (!boxes.empty()) {
+        const SkRect& betRect = boxes[0].rect;
+        SkScalar midX = (betRect.fLeft + betRect.fRight) / 2.0f;
+        SkScalar midY = (betRect.fTop + betRect.fBottom) / 2.0f;
+
+        auto position = paragraph->getGlyphPositionAtCoordinate(midX, midY).position;
+        REPORTER_ASSERT(reporter, position == 1,
+                        "RTL midpoint click returned position %d, expected 1 (before-logical)",
+                        position);
+    }
+}
