@@ -1509,6 +1509,17 @@ PositionWithAffinity TextLine::getGlyphPositionAtCoordinate(SkScalar dx) {
                 if (SkScalarNearlyEqual(center, dx, 0.01f)) {
                     center = dx;
                 }
+
+                // When the run direction opposes the paragraph direction (an embedded RTL
+                // block inside an LTR paragraph, or vice versa), snap hit-test results to
+                // the cluster's paragraph-direction boundaries instead of using run-internal
+                // direction logic. Prevents returning offsets that point "inside" the embedded
+                // run for clicks on its visual edges.
+                const bool paragraphIsLtr =
+                        fOwner->paragraphStyle().getTextDirection() == TextDirection::kLtr;
+                const bool runOpposesParagraph =
+                        (context.run->leftToRight() != paragraphIsLtr);
+
                 if (graphemes.size() > 1) {
                     // Calculate the position proportionally based on grapheme count
                     SkScalar averageGraphemeWidth = glyphemesWidth / graphemes.size();
@@ -1522,19 +1533,45 @@ PositionWithAffinity TextLine::getGlyphPositionAtCoordinate(SkScalar dx) {
                         graphemeCenter = dx;
                     }
                     auto graphemeUtf8Index = graphemes[graphemeIndex];
-                    // Tie at exact midpoint → before-char (Android convention). Asymmetric form
-                    // keeps RTL behavior unchanged; only LTR midpoint is affected.
-                    bool dxBeforeCenter = context.run->leftToRight()
-                                                ? (dx <= graphemeCenter)
-                                                : (dx >= graphemeCenter);
-                    if (dxBeforeCenter) {
-                        size_t utf16Index = fOwner->getUTF16Index(graphemeUtf8Index);
-                        result = { SkToS32(utf16Index), kDownstream };
+                    if (runOpposesParagraph) {
+                        // Paragraph-direction snap at grapheme level.
+                        bool clickOnParaBefore = paragraphIsLtr
+                                                       ? (dx <= graphemeCenter)
+                                                       : (dx >= graphemeCenter);
+                        if (clickOnParaBefore) {
+                            size_t utf16Index = fOwner->getUTF16Index(graphemeUtf8Index);
+                            result = { SkToS32(utf16Index), kUpstream };
+                        } else {
+                            size_t utf16Index = fOwner->getUTF16Index(graphemeUtf8Index + 1);
+                            result = { SkToS32(utf16Index), kDownstream };
+                        }
                     } else {
-                        size_t utf16Index = fOwner->getUTF16Index(graphemeUtf8Index + 1);
-                        result = { SkToS32(utf16Index), kUpstream };
+                        // Tie at exact midpoint → before-char (Android convention).
+                        bool dxBeforeCenter = context.run->leftToRight()
+                                                    ? (dx <= graphemeCenter)
+                                                    : (dx >= graphemeCenter);
+                        if (dxBeforeCenter) {
+                            size_t utf16Index = fOwner->getUTF16Index(graphemeUtf8Index);
+                            result = { SkToS32(utf16Index), kDownstream };
+                        } else {
+                            size_t utf16Index = fOwner->getUTF16Index(graphemeUtf8Index + 1);
+                            result = { SkToS32(utf16Index), kUpstream };
+                        }
                     }
                     // Keep UTF16 index as is
+                } else if (runOpposesParagraph) {
+                    // Paragraph-direction snap at cluster level.
+                    bool clickOnParaBefore =
+                            paragraphIsLtr ? (dx <= center) : (dx >= center);
+                    if (clickOnParaBefore) {
+                        size_t utf16Index = fOwner->getUTF16Index(clusterIndex8);
+                        result = { SkToS32(utf16Index), kUpstream };
+                    } else {
+                        size_t utf16Index = context.run->leftToRight()
+                                                ? fOwner->getUTF16Index(clusterEnd8)
+                                                : fOwner->getUTF16Index(clusterIndex8) + 1;
+                        result = { SkToS32(utf16Index), kDownstream };
+                    }
                 } else if (context.run->leftToRight()
                                 ? (dx <= center)
                                 : (dx >= center)) {

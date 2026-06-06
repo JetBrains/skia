@@ -166,3 +166,67 @@ DEF_TEST_SKIKO(getGlyphPosition_midpointTieBreak_rtl_landsBeforeChar, reporter) 
                         position);
     }
 }
+
+// BiDi-boundary hit-test: clicking inside an embedded opposite-direction run should
+// snap to the cluster's paragraph-direction boundary, matching Android's
+// closest-primary-direction-caret algorithm. Skia historically returned offsets pointing
+// "inside" the embedded run via its run-internal RTL hit-test logic — this test pins
+// the fix that prefers paragraph-direction boundaries.
+//
+// Text "aא." is laid out LTR (first-strong 'a'); א is a single-cluster RTL run embedded
+// inside. Clicking on the LEFT visual half of א should yield offset 1 (= boundary
+// between 'a' and א in paragraph reading direction), not offset 2 (= boundary inside
+// the RTL run between א and '.'). The two offsets encode the same visual caret position
+// but differ in which (offset, affinity) pair we return.
+DEF_TEST_SKIKO(getGlyphPosition_bidiBoundary_embeddedRTL_snapsToParagraphDirection, reporter) {
+    auto factory = SkShapers::BestAvailable();
+    sk_sp<SkUnicode> unicode = sk_ref_sp<SkUnicode>(factory->getUnicode());
+    sk_sp<TestFontCollection> fonts =
+            sk_make_sp<TestFontCollection>(GetResourcePath("fonts").c_str(), false, true);
+    if (fonts->fontsFound() == 0) {
+        ERRORF(reporter,
+               "Skiko_getGlyphPosition_bidiBoundary_embeddedRTL_snapsToParagraphDirection "
+               "requires fonts in resources/fonts/, none found");
+        return;
+    }
+
+    ParagraphStyle paragraphStyle;
+    paragraphStyle.setTextDirection(TextDirection::kLtr);
+    TextStyle textStyle;
+    textStyle.setFontFamilies({SkString("Roboto")});
+    textStyle.setFontSize(50);
+    textStyle.setColor(SK_ColorBLACK);
+
+    // "aא." — 'a' (LTR), Aleph (RTL embedded), '.' (neutral). UTF-16 indices: a(0), א(1), .(2).
+    const char* text = "aא.";
+    ParagraphBuilderImpl builder(paragraphStyle, fonts, unicode);
+    builder.pushStyle(textStyle);
+    builder.addText(text, strlen(text));
+    builder.pop();
+    auto paragraph = builder.Build();
+    paragraph->layout(1000);
+
+    // Get the visual rect of א and probe its visual halves.
+    auto boxes = paragraph->getRectsForRange(1, 2, RectHeightStyle::kTight, RectWidthStyle::kTight);
+    REPORTER_ASSERT(reporter, !boxes.empty(),
+                    "getRectsForRange returned no boxes for א");
+    if (!boxes.empty()) {
+        const SkRect& alephRect = boxes[0].rect;
+        SkScalar midY = (alephRect.fTop + alephRect.fBottom) / 2.0f;
+        SkScalar quarterWidth = (alephRect.fRight - alephRect.fLeft) / 4.0f;
+
+        // Click on visual LEFT half (1px inside the left edge → paragraph-before of α).
+        SkScalar leftQuarter = alephRect.fLeft + quarterWidth;
+        auto leftPos = paragraph->getGlyphPositionAtCoordinate(leftQuarter, midY).position;
+        REPORTER_ASSERT(reporter, leftPos == 1,
+                        "left-half click in embedded RTL returned position %d, expected 1 "
+                        "(paragraph-direction before α)", leftPos);
+
+        // Click on visual RIGHT half → paragraph-after of α.
+        SkScalar rightQuarter = alephRect.fLeft + 3 * quarterWidth;
+        auto rightPos = paragraph->getGlyphPositionAtCoordinate(rightQuarter, midY).position;
+        REPORTER_ASSERT(reporter, rightPos == 2,
+                        "right-half click in embedded RTL returned position %d, expected 2 "
+                        "(paragraph-direction after α)", rightPos);
+    }
+}
