@@ -48,7 +48,9 @@ struct GrD3DBackendSurfaceInfo {
     GrD3DTextureResourceInfo snapTextureResourceInfo() const;
 
     bool isProtected() const;
+#if defined(GPU_TEST_UTILS)
     bool operator==(const GrD3DBackendSurfaceInfo& that) const;
+#endif
 
 private:
     std::unique_ptr<GrD3DTextureResourceInfo> fTextureResourceInfo;
