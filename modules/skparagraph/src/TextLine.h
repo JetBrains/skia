@@ -71,14 +71,20 @@ public:
     ClusterRange clusters() const { return fClusterRange; }
     ClusterRange clustersWithSpaces() const { return fGhostClusterRange; }
     Run* ellipsis() const { return fEllipsis.get(); }
+    Run* hyphen() const { return fHyphen.get(); }
     InternalLineMetrics sizes() const { return fSizes; }
     bool empty() const { return fTextExcludingSpaces.empty(); }
 
     SkScalar spacesWidth() const { return fWidthWithSpaces - width(); }
     SkScalar height() const { return fAdvance.fY; }
     SkScalar width() const {
-        return fAdvance.fX + (fEllipsis != nullptr ? fEllipsis->fAdvance.fX : 0);
+        return fAdvance.fX + (fEllipsis != nullptr ? fEllipsis->fAdvance.fX : 0) +
+               (fHyphen != nullptr ? fHyphen->fAdvance.fX : 0);
     }
+    // Returns the bare advance of the line's source-text content, excluding both
+    // line-end affixes: the ellipsis (if any) and the rendered soft hyphen (if any).
+    // The name is historical -- it predates soft hyphen rendering -- but the value
+    // is the source-text advance, i.e. width() minus any affix widths.
     SkScalar widthWithoutEllipsis() const { return fAdvance.fX; }
     SkVector offset() const;
 
@@ -109,6 +115,7 @@ public:
     void ensureTextBlobCachePopulated();
 
     void createEllipsis(SkScalar maxWidth, const SkString& ellipsis, bool ltr);
+    void createSoftHyphen();
 
     // For testing internal structures
     void scanStyles(StyleType style, const RunStyleVisitor& visitor);
@@ -144,7 +151,9 @@ public:
     bool endsWithHardLineBreak() const;
 
 private:
-    std::unique_ptr<Run> shapeEllipsis(const SkString& ellipsis, const Cluster* cluster);
+    std::unique_ptr<Run> shapeEllipsis(const SkString& ellipsis,
+                                       const Cluster* cluster,
+                                       bool isHyphen = false);
     void justify(SkScalar maxWidth);
 
     void buildTextBlob(TextRange textRange, const TextStyle& style, const ClipContext& context);
@@ -184,6 +193,7 @@ private:
     SkScalar fIndent;                   // Text indent
     SkScalar fWidthWithSpaces;
     std::unique_ptr<Run> fEllipsis;     // In case the line ends with the ellipsis
+    std::unique_ptr<Run> fHyphen;       // Visible hyphen for soft hyphen line breaks
     InternalLineMetrics fSizes;                 // Line metrics as a max of all run metrics and struts
     InternalLineMetrics fMaxRunMetrics;         // No struts - need it for GetRectForRange(max height)
     bool fHasBackground;

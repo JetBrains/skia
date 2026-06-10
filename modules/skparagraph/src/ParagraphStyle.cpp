@@ -36,7 +36,8 @@ bool ParagraphStyle::almostEquals(const ParagraphStyle& rhs) const {
            this->fHintingIsOn == rhs.fHintingIsOn &&
            this->fReplaceTabCharacters == rhs.fReplaceTabCharacters &&
            this->fFakeMissingFontStyles == rhs.fFakeMissingFontStyles &&
-           this->fApplyRoundingHack == rhs.fApplyRoundingHack;
+           this->fApplyRoundingHack == rhs.fApplyRoundingHack &&
+           this->fRenderSoftHyphens == rhs.fRenderSoftHyphens;
 }
 
 bool ParagraphStyle::equals(const ParagraphStyle& rhs) const {
