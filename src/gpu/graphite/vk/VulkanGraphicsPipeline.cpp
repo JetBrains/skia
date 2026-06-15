@@ -9,13 +9,13 @@
 
 #include "include/gpu/ShaderErrorHandler.h"
 #include "include/gpu/graphite/TextureInfo.h"
+#include "include/private/base/SkLog.h"
 #include "src/core/SkSLTypeShared.h"
 #include "src/core/SkTraceEvent.h"
 #include "src/gpu/SkSLToBackend.h"
 #include "src/gpu/graphite/Attribute.h"
 #include "src/gpu/graphite/ContextUtils.h"
 #include "src/gpu/graphite/GraphicsPipelineDesc.h"
-#include "src/gpu/graphite/Log.h"
 #include "src/gpu/graphite/RenderPassDesc.h"
 #include "src/gpu/graphite/RendererProvider.h"
 #include "src/gpu/graphite/ResourceTypes.h"
@@ -477,7 +477,7 @@ static VkDescriptorSetLayout descriptor_data_to_layout(
     VkDescriptorSetLayout setLayout;
     DescriptorDataToVkDescSetLayout(sharedContext, descriptorData, &setLayout);
     if (setLayout == VK_NULL_HANDLE) {
-        SKGPU_LOG_E("Failed to create descriptor set layout; pipeline creation will fail.\n");
+        SKIA_LOG_E("Failed to create descriptor set layout; pipeline creation will fail.\n");
         return VK_NULL_HANDLE;
     }
     return setLayout;
@@ -559,12 +559,11 @@ static bool texture_sampler_desc_set_layout(VkDescriptorSetLayout& outLayout,
         if (!immutableSamplers.empty() && immutableSamplers[i]) {
             immutableSampler = immutableSamplers[i].get();
         }
-        textureSamplerDescs.push_back(
-                {DescriptorType::kCombinedTextureSampler,
-                 /*count=*/1,
-                 /*bindingIdx=*/i,
-                 PipelineStageFlags::kVertexShader | PipelineStageFlags::kFragmentShader,
-                 immutableSampler});
+        textureSamplerDescs.push_back({DescriptorType::kCombinedTextureSampler,
+                                       /*count=*/1,
+                                       /*bindingIdx=*/i,
+                                       PipelineStageFlags::kFragmentShader,
+                                       immutableSampler});
     }
 
     // If no texture/samplers are used, a mock VkDescriptorSetLayout handle by passing in the
@@ -693,7 +692,7 @@ static VkPipeline create_graphics_pipeline(VulkanSharedContext* sharedContext,
         }
     }
     if (result != VK_SUCCESS) {
-        SKGPU_LOG_E("Failed to create pipeline. Error: %d\n", result);
+        SKIA_LOG_E("Failed to create pipeline. Error: %d\n", result);
         return VK_NULL_HANDLE;
     }
 
@@ -855,7 +854,7 @@ sk_sp<VulkanGraphicsPipeline> VulkanGraphicsPipeline::Make(
 
     if (step->staticAttributes().size() + step->appendAttributes().size() >
         sharedContext->vulkanCaps().maxVertexAttributes()) {
-        SKGPU_LOG_W("Requested more than the supported number of vertex attributes");
+        SKIA_LOG_W("Requested more than the supported number of vertex attributes");
         return nullptr;
     }
 
@@ -1097,7 +1096,7 @@ VkPipeline VulkanGraphicsPipeline::MakePipeline(
             threadSafeResourceProvider->findOrCreateRenderPass(renderPassDesc,
                                                                /*compatibleOnly=*/true);
     if (!compatibleRenderPass) {
-        SKGPU_LOG_E("Failed to create compatible renderpass for pipeline");
+        SKIA_LOG_E("Failed to create compatible renderpass for pipeline");
         return VK_NULL_HANDLE;
     }
     SkDEBUGCODE(int subpassCount = RenderPassDescWillLoadMSAAFromResolve(renderPassDesc) ? 2 : 1;)
