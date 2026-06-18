@@ -169,6 +169,11 @@ std::optional<VertexFiller> make_vertex_filler_from_buffer(SkReadBuffer& buffer,
 
     SkMatrix creationMatrix;
     buffer.readMatrix(&creationMatrix);
+    // The only valid creationMatrices do not have perspective and many rendering parts assume
+    // they are non-affine, so reject any malformed matrices here.
+    if (!buffer.validate(!creationMatrix.hasPerspective())) {
+        return std::nullopt;
+    }
 
     SkSpan<SkPoint> leftTop = make_points_from_buffer(buffer, alloc);
     if (leftTop.empty()) {
@@ -887,7 +892,7 @@ public:
             , fUseLCDText{useLCDText}
             , fAntiAliased{antiAliased}
             , fMatrixRange{matrixRange} {
-        SkASSERT(fVertexFiller.maskFormat() == MaskFormat::kA8);
+        SkASSERT_RELEASE(fVertexFiller.maskFormat() == MaskFormat::kA8);
     }
 
     static SubRunOwner Make(SkZip<const SkPackedGlyphID, const SkPoint> accepted,
@@ -937,6 +942,8 @@ public:
         auto vertexFiller = make_vertex_filler_from_buffer(buffer, alloc, &glyphVector.value(),
                                                            skglyph::kSDFT, kGlyphInsetting);
         if (!buffer.validate(vertexFiller.has_value())) { return nullptr; }
+
+        if (!buffer.validate(vertexFiller->maskFormat() == MaskFormat::kA8)) { return nullptr; }
 
         return alloc->makeUnique<SDFTSubRun>(useLCD,
                                              isAntiAliased,
