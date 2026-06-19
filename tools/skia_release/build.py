@@ -108,6 +108,11 @@ def main():
       'extra_cflags_cc=[]',
   ]
 
+  if target == 'windows':
+    args += ['extra_cflags+=["/clang:-fvisibility=default"]']
+  else:
+    args += ['extra_cflags+=["-fvisibility=default"]']
+
   if is_macos or is_ios or is_tvos:
     if is_macos:
       args += ['skia_use_fonthost_mac=true']
