@@ -31,6 +31,15 @@ def gn_bool_to_cmake(s):
   return "OFF"
 
 
+def add_windows_cmake_overrides(configure_cmd, target_os):
+  if target_os != "Windows":
+    return
+
+  # Dawn's optional C++ module interface target currently does not work with
+  # the Windows clang-cl + CMake/Ninja setup used by the Skiko prebuilts CI.
+  configure_cmd.append("-DDAWN_SUPPORTS_CXX_MODULES=OFF")
+
+
 def main():
   parser = argparse.ArgumentParser(description="Build Dawn using CMake.")
   add_common_cmake_args(parser)
@@ -118,6 +127,7 @@ def main():
       # in a D3D only build.
       f"-DDAWN_ENABLE_SPIRV_VALIDATION={gn_bool_to_cmake(args.dawn_enable_vulkan)}",
   ]
+  add_windows_cmake_overrides(configure_cmd, target_os)
   configure_cmd += get_third_party_locations()
 
   if args.enable_rtti:
