@@ -10,6 +10,7 @@ is_skia_dev_build = is_skia_standalone && !is_official_build
 
 declare_args() {
   is_canvaskit = false
+  skia_wasm_sdk = ""
 }
 
 declare_args() {

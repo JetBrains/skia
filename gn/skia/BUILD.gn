@@ -803,8 +803,9 @@ config("executable") {
 }
 
 if (is_wasm) {
-  if (is_canvaskit) {
+  if (is_canvaskit || skia_wasm_sdk != "") {
     # CK manages its flags separately.
+    # When using wasi-sdk, flags are passed via extra_cflags in build.py.
     config("wasm") {
     }
   } else {
