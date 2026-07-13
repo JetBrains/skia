@@ -810,7 +810,9 @@ if (is_wasm) {
     config("wasm") {
       common = [
         "--sysroot=$skia_emsdk_dir/upstream/emscripten/cache/sysroot",
-        "-pthread",
+        # This was introduced after m146, but it breaks Skiko's Emscripten
+        # MAIN_MODULE=2 runtime with memory access out of bounds failures
+        # "-pthread",
       ]
       cflags = common
       ldflags = common
