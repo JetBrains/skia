@@ -184,6 +184,17 @@ TextLine::TextLine(ParagraphImpl* owner,
             break;
         }
     }
+
+    // Letter spacing is added after every glyph, so the last glyph on the line carries a trailing
+    // gap with nothing behind it. Drop it from the advance so width() measures the ink; otherwise
+    // it would push centered/right-aligned text off by half the letter spacing. Cursive runs never
+    // get letter spacing added to their advance (the half-spacing is still recorded), so skip them.
+    if (fClusterRange.width() > 0) {
+        auto& lastCluster = fOwner->cluster(fClusterRange.end - 1);
+        if (!lastCluster.run().isCursiveScript()) {
+            fAdvance.fX -= lastCluster.getHalfLetterSpacing() * 2;
+        }
+    }
 }
 
 void TextLine::paint(ParagraphPainter* painter, SkScalar x, SkScalar y) {
@@ -304,22 +315,6 @@ void TextLine::format(TextAlign align, SkScalar maxWidth) {
     }
 
     bool isRtl = fOwner->paragraphStyle().getTextDirection() == TextDirection::kRtl;
-
-    // Letter spacing is added *after* every glyph (see Run::addLetterSpacesEvenly), including the
-    // last one in the line, and that trailing gap is part of the advance returned by width(). It
-    // is empty space with no glyph behind it, so counting it for center/right alignment pushes the
-    // visible glyphs off position - e.g. centred text ends up shifted left by letterSpacing / 2.
-    // Exclude the trailing letter spacing of the line's last cluster from the alignment shift so
-    // the glyph ink, not the trailing gap, is aligned.
-    SkScalar trailingLetterSpacing = 0;
-    if (fClusterRange.width() > 0) {
-        // getHalfLetterSpacing() == letterSpacing / 2; the full value is the trailing gap.
-        trailingLetterSpacing = fOwner->cluster(fClusterRange.end - 1).getHalfLetterSpacing() * 2;
-    }
-    // For LTR the trailing gap is on the visual right; for RTL it is on the visual left, so the
-    // correction is mirrored.
-    SkScalar centerDelta = delta + (isRtl ? -trailingLetterSpacing : trailingLetterSpacing);
-
     if (align == TextAlign::kJustify) {
         if (!this->endsWithHardLineBreak()) {
             this->justify(maxWidth - fIndent);
@@ -332,9 +327,9 @@ void TextLine::format(TextAlign align, SkScalar maxWidth) {
             fShift = fIndent;
         }
     } else if (align == TextAlign::kRight) {
-        fShift = isRtl ? delta : delta + trailingLetterSpacing;
+        fShift = delta;
     } else if (align == TextAlign::kCenter) {
-        fShift = centerDelta / 2 + (isRtl ? 0 : fIndent);
+        fShift = delta / 2 + (isRtl ? 0 : fIndent);
     } else if (align == TextAlign::kLeft) {
         fShift = fIndent;
     }

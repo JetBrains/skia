@@ -642,12 +642,13 @@ void ParagraphImpl::breakShapedTextIntoLines(SkScalar maxWidth) {
         auto clusterRangeWithGhosts = ClusterRange(0, this->clusters().size() - 1);
         TextIndent indent = this->paragraphStyle().getTextIndent();
         SkScalar lineIndent = indent.getFirstLine();
-        this->addLine(SkPoint::Make(0, 0), lineIndent, advance,
+        auto& line = this->addLine(SkPoint::Make(0, 0), lineIndent, advance,
                       textExcludingSpaces, textRange, textRange,
                       clusterRange, clusterRangeWithGhosts, run.advance().x(),
                       metrics);
 
-        fLongestLine = nearlyZero(advance.fX) ? run.advance().fX : advance.fX;
+        // line.width() has the trailing letter spacing trimmed off; advance.fX still has it.
+        fLongestLine = nearlyZero(line.width()) ? run.advance().fX : line.width();
         fHeight = advance.fY;
         fWidth = maxWidth;
         fMaxIntrinsicWidth = run.advance().fX;
