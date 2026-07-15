@@ -185,10 +185,9 @@ TextLine::TextLine(ParagraphImpl* owner,
         }
     }
 
-    // Letter spacing is added after every glyph, so the last glyph on the line carries a trailing
-    // gap with nothing behind it. Drop it from the advance so width() measures the ink; otherwise
-    // it would push centered/right-aligned text off by half the letter spacing. Cursive runs never
-    // get letter spacing added to their advance (the half-spacing is still recorded), so skip them.
+    // Letter spacing is added after every glyph, including the last, so the advance ends with an
+    // empty gap. Drop it so width() is the ink width. Cursive runs get no letter spacing (but still
+    // record it), so skip them.
     if (fClusterRange.width() > 0) {
         auto& lastCluster = fOwner->cluster(fClusterRange.end - 1);
         if (!lastCluster.run().isCursiveScript()) {

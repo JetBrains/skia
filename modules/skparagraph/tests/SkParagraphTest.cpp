@@ -2114,11 +2114,8 @@ UNIX_ONLY_TEST(SkParagraph_CenterAlignLetterSpacing, reporter) {
     REPORTER_ASSERT(reporter, SkScalarNearlyEqual(inkCenter, width / 2.0f, 2.0f));
 }
 
-// Cursive scripts (Arabic here) never get letter spacing applied to their glyphs, but the
-// per-cluster half letter spacing is still recorded. The trailing-gap trim in the TextLine
-// ctor must skip them, otherwise centred cursive text would be shifted by letterSpacing / 2.
-// Guard against that regression: letter spacing must not move centred Arabic text. We compare
-// the painted ink of the same text laid out with and without letter spacing.
+// Letter spacing is a no-op for cursive text, so it must not move centred Arabic. Guards against
+// the trailing-gap trim wrongly firing on cursive runs.
 UNIX_ONLY_TEST(SkParagraph_CenterAlignLetterSpacingRTL, reporter) {
     sk_sp<ResourceFontCollection> fontCollection = sk_make_sp<ResourceFontCollection>();
     SKIP_IF_FONTS_NOT_FOUND(reporter, fontCollection)
