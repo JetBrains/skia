@@ -152,174 +152,29 @@
 	"en_US_POSIX"
       ]
     },
+// Skiko does not use these ICU services.
+    "coll_ucadata": { "filterType": "exclude" },
+    "confusables": { "filterType": "exclude" },
+    "lang_tree": { "filterType": "exclude" },
+    "locales_tree": { "filterType": "exclude" },
 // Based on the ICU63 version of
 // https://cs.chromium.org/chromium/src/third_party/icu/source/data/mappings/ucmlocal.mk?rcl=797b7c
-    "conversion_mappings": {
-      "includelist": [
-// UCM_SOURCE_CORE=...
-        "iso-8859-2-html",
-        "iso-8859-3-html",
-        "iso-8859-4-html",
-        "iso-8859-5-html",
-        "iso-8859-6-html",
-        "iso-8859-7-html",
-        "iso-8859-8-html",
-        "iso-8859-10-html",
-        "iso-8859-13-html",
-        "iso-8859-14-html",
-        "iso-8859-15-html",
-        "iso-8859-16-html",
-        "windows-1250-html",
-        "windows-1251-html",
-        "windows-1252-html",
-        "windows-1253-html",
-        "windows-1254-html",
-        "windows-1255-html",
-        "windows-1256-html",
-        "windows-1257-html",
-        "windows-1258-html",
-        "windows-936-2000",
-        "gb18030",
-        "big5-html",
-        "shift_jis-html",
-        "euc-jp-html",
-        "euc-kr-html",
-        "windows-874-html",
-        "macintosh-html",
-        "x-mac-cyrillic-html",
-        "ibm866-html",
-        "koi8-r-html",
-        "koi8-u-html"
-      ]
-    },
+// Skiko does not use this ICU service.
+    "conversion_mappings": { "filterType": "exclude" },
 // Based on the ICU63 version of
 // https://cs.chromium.org/chromium/src/third_party/icu/source/data/curr/reslocal.mk?rcl=797b7c
 // Includes the items from CURR_ALIAS_SOURCE and CURR_SOURCE
 // Removed locales per cast/patch_locale.sh:
 // "bn", "et", "gu", "kn", "ml", "mr", "ms", "ta", "te"
-    "curr_tree": {
-      "filterType": "language",
-      "includelist": [
-// Need to explicitly add "root"
-	"root",
-
-        "am",
-        "ar",
-        "bg",
-        "ca",
-        "cs",
-        "da",
-        "de",
-        "el",
-        "en",
-        "es",
-        "fa",
-        "fi",
-        "fil",
-        "fr",
-        "he",
-        "hi",
-        "hr",
-        "hu",
-        "id",
-        "in",
-        "it",
-        "iw",
-        "ja",
-        "ko",
-        "lt",
-        "lv",
-        "mo",
-        "nb",
-        "nl",
-        "no",
-        "pl",
-        "pt",
-        "ro",
-        "ru",
-        "sh",
-        "sk",
-        "sl",
-        "sr",
-        "sv",
-        "sw",
-        "th",
-        "tl",
-        "tr",
-        "uk",
-        "vi",
-        "zh"
-      ]
-    },
+// Skiko does not use this ICU service.
+    "curr_tree": { "filterType": "exclude" },
 // Based on the ICU63 version of
 // https://cs.chromium.org/chromium/src/third_party/icu/source/data/coll/collocal.mk?rcl=797b7c
 // Includes the items from COLLATION_SYNTHETIC_ALIAS and COLLATION_SOURCE
 // Removed locales per cast/patch_locale.sh:
 // "bn", "et", "gu", "kn", "ml", "mr", "ms", "ta", "te"
-    "coll_tree": {
-      "filterType": "union",
-      "unionOf": [
-        {
-          "includelist": [
-            "en",
-            "en_US"
-          ]
-        },
-        {
-          "filterType": "language",
-          "includelist": [
-// Need to explicitly add "root"
-    	    "root",
-
-            "am",
-            "ar",
-            "bg",
-            "ca",
-            "cs",
-            "da",
-            "de",
-            "el",
-            "es",
-            "fa",
-            "fi",
-            "fil",
-            "fr",
-            "he",
-            "hi",
-            "hr",
-            "hu",
-            "id",
-            "in",
-            "it",
-            "iw",
-            "ja",
-            "ko",
-            "lt",
-            "lv",
-            "mo",
-            "nb",
-            "nl",
-            "no",
-            "pl",
-            "pt",
-            "ro",
-            "ru",
-            "sh",
-            "sk",
-            "sl",
-            "sr",
-            "sv",
-            "sw",
-            "th",
-            "tl",
-            "tr",
-            "uk",
-            "vi",
-            "zh"
-          ]
-        }
-      ]
-    },
+// Skiko does not use this ICU service.
+    "coll_tree": { "filterType": "exclude" },
 // Based on the ICU63 version of
 // https://cs.chromium.org/chromium/src/third_party/icu/source/data/rbnf/rbnflocal.mk?rcl=797b7c
     "rbnf_tree": {
@@ -330,204 +185,27 @@
     },
 // Based on
 // https://cs.chromium.org/chromium/src/third_party/icu/android/patch_locale.sh?rcl=797b7c
-    "region_tree": {
-      "includelist": [
-// Need to explicitly add "root"
-//	"root",
-// # Excludes region data. On Android Java API is used to get the data.
-// # Due to a bug in ICU, an empty region list always uses 70kB pool.res bundle.
-// # As a work around, include the minimal version of en.txt
-        "en"
-      ]
-    },
+// Skiko does not use this ICU service.
+    "region_tree": { "filterType": "exclude" },
 // Based on the ICU63 version of
 // https://cs.chromium.org/chromium/src/third_party/icu/source/data/sprep/spreplocal.mk?rcl=797b7c
     "stringprep": { "filterType": "exclude" },
-    "translit": {
-      "filterType": "language",
-      "includelist": [
-// Need to explicitly add "root"
-        "root",
-// List of all Chrome UI Languages
-        "af",
-        "am",
-        "ar",
-        "bg",
-        "bn",
-        "ca",
-        "cs",
-        "da",
-        "de",
-        "el",
-        "en",
-        "es",
-        "et",
-        "fa",
-        "fi",
-        "fil",
-        "fr",
-        "gu",
-        "he",
-        "hi",
-        "hr",
-        "hu",
-        "id",
-        "in",
-        "it",
-        "iw",
-        "ja",
-        "kn",
-        "ko",
-        "lt",
-        "lv",
-        "ml",
-        "mo",
-        "mr",
-        "ms",
-        "nb",
-        "nl",
-        "no",
-        "pl",
-        "pt",
-        "ro",
-        "ru",
-        "sh",
-        "sk",
-        "sl",
-        "sr",
-        "sv",
-        "sw",
-        "ta",
-        "te",
-        "th",
-        "tl",
-        "tr",
-        "uk",
-        "ur",
-        "vi",
-        "zh"
-      ]
-    },
+// Skiko does not use this ICU service.
+    "translit": { "filterType": "exclude" },
 // Based on the ICU63 version of
 // https://cs.chromium.org/chromium/src/third_party/icu/source/data/unit/reslocal.mk?rcl=797b7c
 // Includes the items from UNIT_ALIAS_SOURCE and UNIT_SOURCE
 // Removed locales per cast/patch_locale.sh:
 // "bn", "et", "gu", "kn", "ml", "mr", "ms", "ta", "te"
-    "unit_tree": {
-      "filterType": "language",
-      "includelist": [
-// Need to explicitly add "root"
-	"root",
-
-        "am",
-        "ar",
-        "bg",
-        "ca",
-        "cs",
-        "da",
-        "de",
-        "el",
-        "en",
-        "es",
-        "fa",
-        "fi",
-        "fil",
-        "fr",
-        "he",
-        "hi",
-        "hr",
-        "hu",
-        "id",
-        "in",
-        "it",
-        "iw",
-        "ja",
-        "ko",
-        "lt",
-        "lv",
-        "mo",
-        "nb",
-        "nl",
-        "no",
-        "pl",
-        "pt",
-        "ro",
-        "ru",
-        "sh",
-        "sk",
-        "sl",
-        "sr",
-        "sv",
-        "sw",
-        "th",
-        "tl",
-        "tr",
-        "uk",
-        "vi",
-        "zh"
-      ]
-    },
+// Skiko does not use this ICU service.
+    "unit_tree": { "filterType": "exclude" },
 // Based on the ICU63 version of
 // https://cs.chromium.org/chromium/src/third_party/icu/source/data/zone/reslocal.mk?rcl=797b7c
 // Includes the items from ZONE_ALIAS_SOURCE and ZONE_SOURCE
 // Removed locales per cast/patch_locale.sh:
 // "bn", "et", "gu", "kn", "ml", "mr", "ms", "ta", "te"
-    "zone_tree": {
-      "filterType": "language",
-      "includelist": [
-// Need to explicitly add "root"
-	"root",
-// Need to explicitly add "tzdbNames"
-	"tzdbNames",
-
-        "am",
-        "ar",
-        "bg",
-        "ca",
-        "cs",
-        "da",
-        "de",
-        "el",
-        "en",
-        "es",
-        "fa",
-        "fi",
-        "fil",
-        "fr",
-        "he",
-        "hi",
-        "hr",
-        "hu",
-        "id",
-        "in",
-        "it",
-        "iw",
-        "ja",
-        "ko",
-        "lt",
-        "lv",
-        "mo",
-        "nb",
-        "nl",
-        "no",
-        "pl",
-        "pt",
-        "ro",
-        "ru",
-        "sh",
-        "sk",
-        "sl",
-        "sr",
-        "sv",
-        "sw",
-        "th",
-        "tl",
-        "tr",
-        "uk",
-        "vi",
-        "zh"
-      ]
-    },
+// Skiko does not use this ICU service.
+    "zone_tree": { "filterType": "exclude" },
 // Based on
 // https://cs.chromium.org/chromium/src/third_party/icu/patches/data.build.patch?rcl=797b7c
     "unames": {

@@ -113,6 +113,9 @@ def main():
   else:
     args += ['extra_cflags+=["-fvisibility=default"]']
 
+  if is_ios or is_tvos:
+    args += ['skia_icu_data_filter="//third_party/icu/skiko_ios/filter.json"']
+
   if is_macos or is_ios or is_tvos:
     if is_macos:
       args += ['skia_use_fonthost_mac=true']
