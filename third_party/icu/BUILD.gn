@@ -7,7 +7,14 @@ import("../../gn/skia.gni")
 import("../third_party.gni")
 import("icu.gni")
 
+assert(
+    (skia_icu_data_filter == "" && skia_icu_data_filter_patch == "") ||
+        (skia_icu_data_filter != "" && skia_icu_data_filter_patch != ""),
+    "skia_icu_data_filter and skia_icu_data_filter_patch must be set together")
+
 if (skia_use_system_icu) {
+  assert(skia_icu_data_filter == "",
+         "skia_icu_data_filter can only be used with bundled ICU")
   system("icu") {
     libs = [ "icuuc" ]
     defines = [ "U_USING_ICU_NAMESPACE=0" ]
@@ -30,13 +37,40 @@ if (skia_use_system_icu) {
   } else {
     data_dir += "common"
   }
+
+  icu_data_file = "$data_dir/icudtl.dat"
+  if (skia_icu_data_filter != "") {
+    assert(host_os == "mac", "ICU data generation requires a macOS host")
+
+    icu_data_file = "$target_gen_dir/icudtl.dat"
+    action("generate_icu_data") {
+      script = "generate_skiko_icu_data.py"
+      inputs = [
+        skia_icu_data_filter,
+        skia_icu_data_filter_patch,
+        "../externals/icu/source/runConfigureICU",
+      ]
+      outputs = [ icu_data_file ]
+      args = [
+        "--filter",
+        rebase_path(skia_icu_data_filter, root_build_dir),
+        "--filter-patch",
+        rebase_path(skia_icu_data_filter_patch, root_build_dir),
+        "--output",
+        rebase_path(icu_data_file, root_build_dir),
+        "--build-dir",
+        rebase_path("$target_gen_dir/icu_data_build", root_build_dir),
+      ]
+    }
+  }
+
   # JB NOTE: we use _skiko suffix for ICU symbols to avoid the clashes with Apple SDK symbols
   action("make_data_assembly") {
     if (target_cpu == "wasm") {
       _u_icu_version_major_num =
           "_skiko78"  # defined in source/common/unicode/uvernum.h
       script = "make_data_cpp.py"
-      inputs = [ "$data_dir/icudtl.dat" ]
+      inputs = [ icu_data_file ]
       outputs = [ data_assembly ]
       args = [
         "icudt${_u_icu_version_major_num}_dat",
@@ -49,7 +83,7 @@ if (skia_use_system_icu) {
       # We can't modify it because it's checked-out from ICU repo for every build.
       # Therefore we have a copy for skiko purposes:
       script = "make_data_assembly_for_skiko.py"
-      inputs = [ "$data_dir/icudtl.dat" ]
+      inputs = [ icu_data_file ]
       outputs = [ "$data_assembly" ]
       args = [
         rebase_path(inputs[0], root_build_dir),
@@ -58,6 +92,9 @@ if (skia_use_system_icu) {
       if (is_mac || is_ios) {
         args += [ "--mac" ]
       }
+    }
+    if (skia_icu_data_filter != "") {
+      deps = [ ":generate_icu_data" ]
     }
   }
 
@@ -130,9 +167,16 @@ if (skia_use_system_icu) {
     }
   }
 
+  icu_data_copy_file = "../externals/icu/common/icudtl.dat"
+  if (skia_icu_data_filter != "") {
+    icu_data_copy_file = icu_data_file
+  }
   copy("icudata") {
-    sources = [ "../externals/icu/common/icudtl.dat" ]
+    sources = [ icu_data_copy_file ]
     outputs = [ "$root_out_dir/icudtl.dat" ]
     data = [ "$root_out_dir/icudtl.dat" ]
+    if (skia_icu_data_filter != "") {
+      deps = [ ":generate_icu_data" ]
+    }
   }
 }

@@ -7,6 +7,11 @@ import("../../gn/skia.gni")
 
 declare_args() {
   skia_use_system_icu = is_official_build && !is_canvaskit
+
+  # When both are set, build icudtl.dat from Skia's pinned ICU checkout after
+  # applying the patch to the selected ICU data filter.
+  skia_icu_data_filter = ""
+  skia_icu_data_filter_patch = ""
 }
 
 icu_sources = [
