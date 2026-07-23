@@ -7,6 +7,11 @@ import("../../gn/skia.gni")
 import("../third_party.gni")
 import("icu.gni")
 
+assert(
+    (skia_icu_data_filter == "" && skia_icu_data_filter_patch == "") ||
+        (skia_icu_data_filter != "" && skia_icu_data_filter_patch != ""),
+    "skia_icu_data_filter and skia_icu_data_filter_patch must be set together")
+
 if (skia_use_system_icu) {
   assert(skia_icu_data_filter == "",
          "skia_icu_data_filter can only be used with bundled ICU")
@@ -35,8 +40,6 @@ if (skia_use_system_icu) {
 
   icu_data_file = "$data_dir/icudtl.dat"
   if (skia_icu_data_filter != "") {
-    assert(is_ios,
-           "skia_icu_data_filter can only be used for iOS and tvOS targets")
     assert(host_os == "mac", "ICU data generation requires a macOS host")
 
     icu_data_file = "$target_gen_dir/icudtl.dat"
@@ -44,12 +47,15 @@ if (skia_use_system_icu) {
       script = "generate_skiko_icu_data.py"
       inputs = [
         skia_icu_data_filter,
+        skia_icu_data_filter_patch,
         "../externals/icu/source/runConfigureICU",
       ]
       outputs = [ icu_data_file ]
       args = [
         "--filter",
         rebase_path(skia_icu_data_filter, root_build_dir),
+        "--filter-patch",
+        rebase_path(skia_icu_data_filter_patch, root_build_dir),
         "--output",
         rebase_path(icu_data_file, root_build_dir),
         "--build-dir",

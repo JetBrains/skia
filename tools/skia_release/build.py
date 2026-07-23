@@ -114,7 +114,10 @@ def main():
     args += ['extra_cflags+=["-fvisibility=default"]']
 
   if is_ios or is_tvos:
-    args += ['skia_icu_data_filter="//third_party/icu/skiko_ios/filter.json"']
+    args += [
+        'skia_icu_data_filter="//third_party/externals/icu/filters/ios.json"',
+        'skia_icu_data_filter_patch="//third_party/icu/skiko_ios/filter.patch"'
+    ]
 
   if is_macos or is_ios or is_tvos:
     if is_macos:
