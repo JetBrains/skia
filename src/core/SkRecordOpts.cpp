@@ -279,7 +279,7 @@ void SkRecordOptimize(SkRecord* record) {
     // Turn off this optimization completely for Android framework
     // because it makes the following Android CTS test fail:
     // android.uirendering.cts.testclasses.LayerTests#testSaveLayerClippedWithAlpha
-#ifndef SK_BUILD_FOR_ANDROID_FRAMEWORK
+#if !defined(SK_BUILD_FOR_ANDROID_FRAMEWORK) && !defined(SK_BUILD_FOR_SKIKO)
     SkRecordNoopSaveLayerDrawRestores(record);
 #endif
     SkRecordMergeSvgOpacityAndFilterLayers(record);
