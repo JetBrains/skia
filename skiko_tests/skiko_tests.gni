@@ -2,6 +2,7 @@ _tests = get_path_info("../skiko_tests", "abspath")
 
 skiko_tests_sources = [
   "$_tests/GetGlyphPositionAtCoordinateTest.cpp",
+  "$_tests/SaveLayerBoundsTest.cpp",
   "$_tests/SkikoTestExample.cpp",
   "$_tests/SkParagraphCacheTest.cpp",
   "$_tests/SupportTopRatioBasedVerticalAlignmentTest.cpp",
