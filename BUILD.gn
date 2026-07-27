@@ -86,7 +86,12 @@ config("skia_public") {
 config("skia_private") {
   visibility = [ "./*" ]
 
-  defines = [ "SK_GAMMA_APPLY_TO_A8" ]
+  defines = [
+    "SK_GAMMA_APPLY_TO_A8",
+
+    # This fork builds Skia for Skiko.
+    "SK_BUILD_FOR_SKIKO",
+  ]
   if (skia_use_fixed_gamma_text) {
     defines += [
       "SK_GAMMA_EXPONENT=1.4",
