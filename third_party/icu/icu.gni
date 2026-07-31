@@ -7,6 +7,11 @@ import("../../gn/skia.gni")
 
 declare_args() {
   skia_use_system_icu = is_official_build && !is_canvaskit
+
+  # When both are set, build icudtl.dat from Skia's pinned ICU checkout after
+  # applying the patch to the selected ICU data filter.
+  skia_icu_data_filter = ""
+  skia_icu_data_filter_patch = ""
 }
 
 icu_sources = [
@@ -49,6 +54,8 @@ icu_sources = [
   "$_src/common/errorcode.cpp",
   "$_src/common/filteredbrk.cpp",
   "$_src/common/filterednormalizer2.cpp",
+  "$_src/common/fixedstring.cpp",
+  "$_src/common/fixedstring.h",
   "$_src/common/hash.h",
   "$_src/common/icudataver.cpp",
   "$_src/common/icuplug.cpp",

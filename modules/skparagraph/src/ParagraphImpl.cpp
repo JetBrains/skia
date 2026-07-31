@@ -7,8 +7,8 @@
 #include "include/core/SkPictureRecorder.h"
 #include "include/core/SkSpan.h"
 #include "include/core/SkTypeface.h"
-#include "include/private/base/SkTFitsIn.h"
-#include "include/private/base/SkTo.h"
+#include "include/private/SkTFitsIn.h"
+#include "include/private/SkTo.h"
 #include "modules/skparagraph/include/Metrics.h"
 #include "modules/skparagraph/include/Paragraph.h"
 #include "modules/skparagraph/include/ParagraphPainter.h"
@@ -21,8 +21,8 @@
 #include "modules/skparagraph/src/TextLine.h"
 #include "modules/skparagraph/src/TextWrapper.h"
 #include "modules/skunicode/include/SkUnicode.h"
-#include "src/base/SkUTF.h"
 #include "src/core/SkTextBlobPriv.h"
+#include "src/core/SkUTF.h"
 
 #include <algorithm>
 #include <cfloat>
@@ -680,6 +680,9 @@ void ParagraphImpl::breakShapedTextIntoLines(SkScalar maxWidth) {
                 if (addEllipsis) {
                     line.createEllipsis(maxWidth, this->getEllipsis(), true);
                 }
+                if (this->paragraphStyle().getRenderSoftHyphens()) {
+                    line.createSoftHyphen();
+                }
                 fLongestLine = std::max(fLongestLine, nearlyZero(line.width()) ? widthWithSpaces : line.width());
             });
 
@@ -919,6 +922,23 @@ PositionWithAffinity ParagraphImpl::getGlyphPositionAtCoordinate(SkScalar dx, Sk
         auto result = line.getGlyphPositionAtCoordinate(dx);
         //SkDebugf("getGlyphPositionAtCoordinate(%f, %f): %d %s\n", dx, dy, result.position,
         //   result.affinity == Affinity::kUpstream ? "up" : "down");
+
+        // Snap caret out of the middle of a grapheme cluster (CMP-8054):
+        // e.g. between a base char and a non-spacing mark such as the combining
+        // double acute (U+030B) or the devanagari virama (U+094D). Caret positions
+        // inside a grapheme are not selectable.
+        if (result.position >= 0) {
+            size_t utf16Idx = SkToSizeT(result.position);
+            if (utf16Idx < SkToSizeT(fUTF8IndexForUTF16Index.size())) {
+                TextIndex utf8 = fUTF8IndexForUTF16Index[utf16Idx];
+                if (utf8 < fText.size() &&
+                    (fCodeUnitProperties[utf8] & SkUnicode::CodeUnitFlags::kGraphemeStart) == 0) {
+                    TextIndex snapped = this->findNextGraphemeBoundary(utf8);
+                    result = { SkToS32(this->getUTF16Index(snapped)), result.affinity };
+                }
+            }
+        }
+
         return result;
     }
 

@@ -31,6 +31,15 @@ def gn_bool_to_cmake(s):
   return "OFF"
 
 
+def add_windows_cmake_overrides(configure_cmd, target_os):
+  if target_os != "Windows":
+    return
+
+  # Dawn's optional C++ module interface target currently does not work with
+  # the Windows clang-cl + CMake/Ninja setup used by the Skiko prebuilts CI.
+  configure_cmd.append("-DDAWN_SUPPORTS_CXX_MODULES=OFF")
+
+
 def main():
   parser = argparse.ArgumentParser(description="Build Dawn using CMake.")
   add_common_cmake_args(parser)
@@ -75,6 +84,13 @@ def main():
   build_targets = ["webgpu_headers_gen", "dawn_proc", "dawn_native"]
   depfile_path = args.depfile_path
 
+  # On Windows, Debug build has CRT compatibility issues with Skia (MTd vs MT).
+  # Use RelWithDebInfo instead to keep MT, with optimization flags overridden below.
+  if args.build_type == "Debug" and target_os == "Windows":
+    cmake_build_type = "RelWithDebInfo"
+  else:
+    cmake_build_type = args.build_type
+
   script_dir = os.path.dirname(os.path.realpath(__file__))
 
   dawn_dir = os.path.join(script_dir, "..", "externals", "dawn")
@@ -93,7 +109,7 @@ def main():
       f"-DCMAKE_SYSTEM_NAME={target_os}",
       f"-DCMAKE_SYSTEM_PROCESSOR={target_cpu}",
       "-DDAWN_BUILD_MONOLITHIC_LIBRARY=OFF",
-      f"-DCMAKE_BUILD_TYPE={args.build_type}",
+      f"-DCMAKE_BUILD_TYPE={cmake_build_type}",
       # Explicitly set the C++ standard to avoid issues with CMake's feature
       # detection for Clang on Windows.
       "-DCMAKE_CXX_STANDARD=20",
@@ -107,7 +123,11 @@ def main():
       f"-DDAWN_ENABLE_OPENGLES={gn_bool_to_cmake(args.dawn_enable_opengles)}",
       f"-DDAWN_ENABLE_METAL={gn_bool_to_cmake(args.dawn_enable_metal)}",
       f"-DDAWN_ENABLE_VULKAN={gn_bool_to_cmake(args.dawn_enable_vulkan)}",
+      # SPIRV_VALIDATION defaults to on in Windows builds, which we don't need
+      # in a D3D only build.
+      f"-DDAWN_ENABLE_SPIRV_VALIDATION={gn_bool_to_cmake(args.dawn_enable_vulkan)}",
   ]
+  add_windows_cmake_overrides(configure_cmd, target_os)
   configure_cmd += get_third_party_locations()
 
   if args.enable_rtti:
@@ -130,6 +150,14 @@ def main():
     if args.is_clang and target_cpu == "ARM64":
         clang_target = "--target=arm64-windows"
         cxx_flags.append(clang_target)
+
+    if args.build_type == "Debug":
+      # Override RelWithDebInfo defaults to be unoptimized and debuggable.
+      # /DNDEBUG is intentionally omitted so Dawn's debug assertions stay active.
+      # CRT stays MT (no MTd/MT mismatch) because the build type is RelWithDebInfo.
+      configure_cmd.append("-DCMAKE_CXX_FLAGS_RELWITHDEBINFO=/Od /Ob0 /Zi")
+      configure_cmd.append("-DCMAKE_C_FLAGS_RELWITHDEBINFO=/Od /Ob0 /Zi")
+      configure_cmd.append("-DDAWN_ALWAYS_ASSERT=ON")
   else:
     configure_cmd.append("-DTINT_BUILD_HLSL_WRITER=OFF")
     cxx_flags.append("-w") # Silence warnings

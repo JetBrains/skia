@@ -152,6 +152,9 @@ struct ParagraphStyle {
     const TextIndent& getTextIndent() const { return fTextIndent; }
     void setTextIndent(const TextIndent& textIndent) { fTextIndent = textIndent; }
 
+    bool getRenderSoftHyphens() const { return fRenderSoftHyphens; }
+    void setRenderSoftHyphens(bool value) { fRenderSoftHyphens = value; }
+
 private:
     StrutStyle fStrutStyle;
     TextStyle fDefaultTextStyle;
@@ -168,9 +171,11 @@ private:
     bool fFakeMissingFontStyles;
     bool fApplyRoundingHack = true;
     bool fLetterSpacingByCSSSpec = false;
+    bool fRenderSoftHyphens = false;
 
     // common part of equals and equalsByLayout
     bool almostEquals(const ParagraphStyle& rhs) const;
+
 };
 }  // namespace textlayout
 }  // namespace skia

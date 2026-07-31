@@ -12,8 +12,8 @@
 #include "include/core/SkColor.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkRefCnt.h"
-#include "include/private/base/SkMath.h"
-#include "include/private/base/SkTemplates.h"
+#include "include/private/SkMath.h"
+#include "include/private/SkTemplates.h"
 #include "src/core/SkRecord.h"
 #include "src/core/SkRecordPattern.h"
 #include "src/core/SkRecords.h"
@@ -279,7 +279,7 @@ void SkRecordOptimize(SkRecord* record) {
     // Turn off this optimization completely for Android framework
     // because it makes the following Android CTS test fail:
     // android.uirendering.cts.testclasses.LayerTests#testSaveLayerClippedWithAlpha
-#ifndef SK_BUILD_FOR_ANDROID_FRAMEWORK
+#if !defined(SK_BUILD_FOR_ANDROID_FRAMEWORK) && !defined(SK_BUILD_FOR_SKIKO)
     SkRecordNoopSaveLayerDrawRestores(record);
 #endif
     SkRecordMergeSvgOpacityAndFilterLayers(record);

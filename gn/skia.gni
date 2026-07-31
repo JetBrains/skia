@@ -86,6 +86,7 @@ declare_args() {
   skia_use_rust_exif = false
   skia_use_rust_icc = false
   skia_use_rust_png_decode = false
+  skia_use_rust_png_for_android = false
   skia_use_rust_png_encode = false
   skia_use_rust_bmp_decode = false
   skia_use_sfml = false
@@ -124,10 +125,7 @@ declare_args() {
   #
   # While GCC is supported, it lacks CI coverage to catch regressions.
   # Therefore, we disable it by default on GCC builds.
-  #
-  # TODO(b/351867706): Re-enable. One Android test reaches PA_NOTREACHED() at
-  # the moment.
-  skia_use_partition_alloc = false
+  skia_use_partition_alloc = is_clang
   skia_partition_alloc_dir = "//third_party/externals/partition_alloc"
 }
 

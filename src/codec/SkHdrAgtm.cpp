@@ -267,7 +267,7 @@ void PopulateSlopeFromPCHIP(AdaptiveGlobalToneMap::GainCurve& gainCurve) {
     };
 
     for (int i = 0; i < N; ++i) {
-        if (i - 1 >= 0 && i + 1 < N && cp[i].fX < cp[i+1].fX) {
+        if (i - 1 >= 0 && i + 1 < N && cp[i-1].fX < cp[i].fX && cp[i].fX < cp[i+1].fX) {
             // Interior point, formula (C.8).
             if (std::signbit(s[i-1]) != std::signbit(s[i])) {
                 cp[i].fM = 0.f;
@@ -314,7 +314,7 @@ MakeGainCurveXYMImage(const AdaptiveGlobalToneMap::HeadroomAdaptiveToneMap& hatm
     // Write the X, Y, and M values of the control points into the colors of the rows.
     SkBitmap bm32;
     bm32.allocPixels(SkImageInfo::Make(
-            AdaptiveGlobalToneMap::GainCurve::kMaxNumControlPoints, hatm.fAlternateImages.size(),
+            maxNumControlPoints, hatm.fAlternateImages.size(),
             kRGBA_F32_SkColorType, kPremul_SkAlphaType));
     for (size_t a = 0; a < hatm.fAlternateImages.size(); ++a) {
         const auto& alt = hatm.fAlternateImages[a];
@@ -823,6 +823,10 @@ SkString AdaptiveGlobalToneMap::toString() const {
     }
     result += "]}";
     return result;
+}
+
+bool AdaptiveGlobalToneMap::isValid() const {
+    return AgtmHelpers::Validate(*this);
 }
 
 }  // namespace skhdr

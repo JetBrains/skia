@@ -2,8 +2,8 @@
 
 #include "modules/skparagraph/include/DartTypes.h"
 #include "modules/skparagraph/include/ParagraphStyle.h"
-#include "src/base/SkUTF.h"
 #include "src/core/SkStringUtils.h"
+#include "src/core/SkUTF.h"
 
 namespace skia {
 namespace textlayout {
@@ -36,7 +36,8 @@ bool ParagraphStyle::almostEquals(const ParagraphStyle& rhs) const {
            this->fHintingIsOn == rhs.fHintingIsOn &&
            this->fReplaceTabCharacters == rhs.fReplaceTabCharacters &&
            this->fFakeMissingFontStyles == rhs.fFakeMissingFontStyles &&
-           this->fApplyRoundingHack == rhs.fApplyRoundingHack;
+           this->fApplyRoundingHack == rhs.fApplyRoundingHack &&
+           this->fRenderSoftHyphens == rhs.fRenderSoftHyphens;
 }
 
 bool ParagraphStyle::equals(const ParagraphStyle& rhs) const {

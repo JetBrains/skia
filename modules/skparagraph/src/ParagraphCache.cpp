@@ -4,7 +4,7 @@
 #include "modules/skparagraph/include/FontArguments.h"
 #include "modules/skparagraph/include/ParagraphCache.h"
 #include "modules/skparagraph/src/ParagraphImpl.h"
-#include "src/base/SkFloatBits.h"
+#include "src/core/SkFloatBits.h"
 #include "src/core/SkLRUCache.h"
 
 using namespace skia_private;
@@ -116,7 +116,9 @@ public:
         , fBidiRegions(paragraph->fBidiRegions)
         , fHasLineBreaks(paragraph->fHasLineBreaks)
         , fHasWhitespacesInside(paragraph->fHasWhitespacesInside)
-        , fTrailingSpaces(paragraph->fTrailingSpaces) { }
+        , fTrailingSpaces(paragraph->fTrailingSpaces)
+        , fUnresolvedGlyphs(paragraph->fUnresolvedGlyphs)
+        , fUnresolvedCodepoints(paragraph->fUnresolvedCodepoints) { }
 
     // Input == key
     ParagraphCacheKey fKey;
@@ -132,6 +134,8 @@ public:
     bool fHasLineBreaks;
     bool fHasWhitespacesInside;
     TextIndex fTrailingSpaces;
+    size_t fUnresolvedGlyphs;
+    std::unordered_set<SkUnichar> fUnresolvedCodepoints;
 };
 
 uint32_t ParagraphCacheKey::mix(uint32_t hash, uint32_t data) {
@@ -294,6 +298,8 @@ void ParagraphCache::updateTo(ParagraphImpl* paragraph, const Entry* entry) {
     paragraph->fHasLineBreaks = entry->fValue->fHasLineBreaks;
     paragraph->fHasWhitespacesInside = entry->fValue->fHasWhitespacesInside;
     paragraph->fTrailingSpaces = entry->fValue->fTrailingSpaces;
+    paragraph->fUnresolvedGlyphs = entry->fValue->fUnresolvedGlyphs;
+    paragraph->fUnresolvedCodepoints = entry->fValue->fUnresolvedCodepoints;
     for (auto& run : paragraph->fRuns) {
         run.setOwner(paragraph);
     }

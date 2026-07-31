@@ -108,6 +108,17 @@ def main():
       'extra_cflags_cc=[]',
   ]
 
+  if target == 'windows':
+    args += ['extra_cflags+=["/clang:-fvisibility=default"]']
+  else:
+    args += ['extra_cflags+=["-fvisibility=default"]']
+
+  if is_ios or is_tvos:
+    args += [
+        'skia_icu_data_filter="//third_party/externals/icu/filters/ios.json"',
+        'skia_icu_data_filter_patch="//third_party/icu/skiko_ios/filter.patch"'
+    ]
+
   if is_macos or is_ios or is_tvos:
     if is_macos:
       args += ['skia_use_fonthost_mac=true', 'skia_use_vulkan=true']

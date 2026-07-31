@@ -10,7 +10,7 @@
 
 #include "include/core/SkColorSpace.h"
 #include "include/core/SkData.h"
-#include "include/private/base/SkAPI.h"
+#include "include/private/SkAPI.h"
 
 #include <algorithm>
 #include <cmath>
@@ -257,6 +257,11 @@ struct SK_API AdaptiveGlobalToneMap {
      * Return a human-readable description.
      */
     SkString toString() const;
+
+    /**
+     * Return true if this metadata satisfies all normative constraints.
+     */
+    bool isValid() const;
 
     bool operator==(const AdaptiveGlobalToneMap& other) const {
         return fHdrReferenceWhite == other.fHdrReferenceWhite &&

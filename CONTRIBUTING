@@ -1,1 +1,5 @@
+This repository contains patches to build Skia for [Skiko](https://github.com/JetBrains/skiko/).
+Only Skiko specific changes are accepted here,
+for general purpose improvements please contribute directly to the upstream.
+
 Please see the guidelines for contributing code at https://skia.org/docs/dev/contrib/
