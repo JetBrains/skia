@@ -24,6 +24,7 @@ def main():
   machine = common.machine()
   target = common.target()
   classifier = common.classifier()
+  enable_graphite_dawn = common.enable_graphite_dawn()
   out_bin = 'out/' + build_type + '-' + target + '-' + machine
 
   globs = [
@@ -82,6 +83,8 @@ def main():
       'third_party/externals/zlib/*.h',
       'third_party/icu/*.h',
   ]
+  if enable_graphite_dawn:
+    globs.append('third_party/externals/dawn/include/**/*')
 
   dist = 'Skia-' + version + '-' + target + '-' + build_type + '-' + machine + classifier + '.zip'
   print('> Writing', dist)
