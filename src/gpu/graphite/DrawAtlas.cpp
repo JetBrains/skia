@@ -10,6 +10,7 @@
 #include "include/core/SkColorSpace.h"
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkRect.h"
+#include "include/core/SkSwizzle.h"
 #include "include/core/SkTypes.h"
 #include "include/gpu/GpuTypes.h"
 #include "include/gpu/graphite/Recorder.h"
@@ -18,7 +19,6 @@
 #include "include/private/SkTArray.h"
 #include "include/private/SkTPin.h"
 #include "src/core/SkMathPriv.h"
-#include "src/core/SkSwizzlePriv.h"
 #include "src/core/SkTraceEvent.h"
 #include "src/gpu/MaskFormat.h"
 #include "src/gpu/graphite/Caps.h"
@@ -47,8 +47,8 @@ void copy_pixels(std::byte* dst, size_t dstRowBytes, const std::byte* src, size_
     // Fast path for BGRA -> RGBA
     if (bytesPerPixel == 4 && kBGRAIsNative) {
         for (int i = 0; i < size.height(); ++i) {
-            SkOpts::RGBA_to_BGRA(reinterpret_cast<uint32_t*>(dst),
-                                 reinterpret_cast<const uint32_t*>(src), size.width());
+            SkSwapRB(reinterpret_cast<uint32_t*>(dst),
+                     reinterpret_cast<const uint32_t*>(src), size.width());
             dst += dstRowBytes;
             src += srcRowBytes;
         }
