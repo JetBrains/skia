@@ -113,10 +113,41 @@ def main():
   else:
     args += ['extra_cflags+=["-fvisibility=default"]']
 
-  if is_ios or is_tvos:
+  icu_data_config = {
+      'ios': (
+          '//third_party/externals/icu/filters/ios.json',
+          '//third_party/icu/skiko_ios/filter.patch',
+      ),
+      'iosSim': (
+          '//third_party/externals/icu/filters/ios.json',
+          '//third_party/icu/skiko_ios/filter.patch',
+      ),
+      'tvos': (
+          '//third_party/externals/icu/filters/ios.json',
+          '//third_party/icu/skiko_ios/filter.patch',
+      ),
+      'tvosSim': (
+          '//third_party/externals/icu/filters/ios.json',
+          '//third_party/icu/skiko_ios/filter.patch',
+      ),
+      'macos': (
+          '//third_party/externals/icu/filters/common.json',
+          '//third_party/icu/skiko_desktop/filter.patch',
+      ),
+      'windows': (
+          '//third_party/externals/icu/filters/common.json',
+          '//third_party/icu/skiko_desktop/filter.patch',
+      ),
+      'linux': (
+          '//third_party/externals/icu/filters/common.json',
+          '//third_party/icu/skiko_desktop/filter.patch',
+      ),
+  }.get(target)
+  if icu_data_config:
+    icu_filter, icu_filter_patch = icu_data_config
     args += [
-        'skia_icu_data_filter="//third_party/externals/icu/filters/ios.json"',
-        'skia_icu_data_filter_patch="//third_party/icu/skiko_ios/filter.patch"'
+        f'skia_icu_data_filter="{icu_filter}"',
+        f'skia_icu_data_filter_patch="{icu_filter_patch}"',
     ]
 
   if is_macos or is_ios or is_tvos:

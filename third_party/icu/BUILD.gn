@@ -40,7 +40,8 @@ if (skia_use_system_icu) {
 
   icu_data_file = "$data_dir/icudtl.dat"
   if (skia_icu_data_filter != "") {
-    assert(host_os == "mac", "ICU data generation requires a macOS host")
+    assert(host_os == "mac" || host_os == "linux" || host_os == "win",
+           "ICU data generation requires a macOS, Linux, or Windows host")
 
     icu_data_file = "$target_gen_dir/icudtl.dat"
     action("generate_icu_data") {
@@ -61,6 +62,10 @@ if (skia_use_system_icu) {
         "--build-dir",
         rebase_path("$target_gen_dir/icu_data_build", root_build_dir),
       ]
+
+      if (is_ios || is_tvos) {
+        args += [ "--apply-cast-patch" ]
+      }
     }
   }
 

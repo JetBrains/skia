@@ -13,12 +13,21 @@ SKIA_ROOT = SCRIPT_DIR.parent.parent
 ICU_ROOT = SKIA_ROOT / "third_party" / "externals" / "icu"
 
 
+def shell_path(path):
+    if platform.system() == "Windows":
+        return subprocess.check_output(
+            ["cygpath", "--unix", str(path)], text=True
+        ).strip()
+    return Path(path).as_posix()
+
+
 def parse_args():
     parser = argparse.ArgumentParser(
         description="Build a filtered ICU data package from Skia's pinned ICU."
     )
     parser.add_argument("--filter", required=True, type=Path)
     parser.add_argument("--filter-patch", required=True, type=Path)
+    parser.add_argument("--apply-cast-patch", action="store_true")
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--build-dir", required=True, type=Path)
     return parser.parse_args()
@@ -37,15 +46,27 @@ def main():
         raise SystemExit(f"Missing ICU data filter: {source_filter}")
     if not filter_patch.is_file():
         raise SystemExit(f"Missing ICU data filter patch: {filter_patch}")
-    if not configure.is_file() or not os.access(configure, os.X_OK):
+    if not configure.is_file():
         raise SystemExit(f"Missing pinned ICU checkout at {ICU_ROOT}")
-    if not patch_locale.is_file() or not os.access(patch_locale, os.X_OK):
+    if args.apply_cast_patch and not patch_locale.is_file():
         raise SystemExit(f"Missing Chromium ICU locale patch at {patch_locale}")
     if build_dir == Path(build_dir.anchor):
         raise SystemExit(f"Refusing to use {build_dir} as the build directory")
 
-    if platform.system() != "Darwin":
-        raise SystemExit("Filtered ICU data generation is supported on macOS only")
+    host_system = platform.system()
+    configure_platform = {
+        "Darwin": "MacOSX",
+        "Linux": "Linux/gcc",
+        "Windows": "MinGW",
+    }.get(host_system)
+    if configure_platform is None:
+        raise SystemExit(
+            f"Filtered ICU data generation is not supported on {host_system}"
+        )
+
+    # On Windows, use the MSYS Bash that launched the build. A bare `bash`
+    # can resolve to the WSL launcher instead.
+    bash = os.environ.get("SHELL", "bash") if host_system == "Windows" else "bash"
 
     shutil.rmtree(build_dir, ignore_errors=True)
     build_dir.mkdir(parents=True)
@@ -65,28 +86,46 @@ def main():
     # pinned ICU checkout.
     source_root = build_dir / "icu"
     shutil.copytree(ICU_ROOT / "source", source_root / "source")
-    shutil.copytree(ICU_ROOT / "cast", source_root / "cast")
-    subprocess.run(
-        [str(source_root / "cast" / "patch_locale.sh")],
-        cwd=source_root,
-        check=True,
-    )
+    if args.apply_cast_patch:
+        shutil.copytree(ICU_ROOT / "cast", source_root / "cast")
+        subprocess.run(
+            [bash, shell_path(source_root / "cast" / "patch_locale.sh")],
+            cwd=source_root,
+            check=True,
+        )
 
     icu_build_dir = build_dir / "build"
     icu_build_dir.mkdir()
     configure = source_root / "source" / "runConfigureICU"
 
     env = os.environ.copy()
-    env["ICU_DATA_FILTER_FILE"] = str(filter_file)
+    env["ICU_DATA_FILTER_FILE"] = shell_path(filter_file)
+    configure_args = []
+    if host_system == "Windows":
+        msys_root = Path(bash).parents[2]
+        clang_bin = msys_root / "clang64" / "bin"
+        env["CC"] = shell_path(clang_bin / "clang.exe")
+        env["CXX"] = shell_path(clang_bin / "clang++.exe")
+        env["PATH"] = str(clang_bin) + os.pathsep + env["PATH"]
+        # ICU source data is UTF-8, while Windows otherwise uses its system
+        # code page when tools such as genrb read it.
+        env["CPPFLAGS"] = (
+            env.get("CPPFLAGS", "") + " -DU_CHARSET_IS_UTF8=1"
+        ).strip()
+        configure_args = [
+            "--build=x86_64-w64-mingw32",
+            "--host=x86_64-w64-mingw32",
+        ]
 
     subprocess.run(
-        [str(configure), "MacOSX"]
+        [bash, shell_path(configure), configure_platform]
+        + configure_args
         + [
             "--disable-tests",
             "--disable-samples",
             "--disable-layoutex",
             "--enable-rpath",
-            "--prefix=" + str(build_dir / "install"),
+            "--prefix=" + shell_path(build_dir / "install"),
         ],
         cwd=icu_build_dir,
         env=env,
@@ -95,6 +134,7 @@ def main():
     subprocess.run(
         ["make", "-j", str(os.cpu_count() or 1)],
         cwd=icu_build_dir,
+        env=env,
         check=True,
     )
 
