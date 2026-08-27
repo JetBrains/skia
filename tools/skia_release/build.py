@@ -77,6 +77,9 @@ def main():
   ndk = common.ndk()
   wasi_sdk = common.wasi_sdk()
   gpu_as_extension = common.gpu_as_extension()
+  if target == 'wasm':
+    # WASM release packages emit Ganesh as a separate extension library.
+    gpu_as_extension = True
   enable_ganesh = common.enable_ganesh()
   enable_graphite = common.enable_graphite()
   enable_graphite_dawn = common.enable_graphite_dawn()
