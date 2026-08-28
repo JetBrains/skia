@@ -111,6 +111,7 @@ def generate_dawn_headers_for_wasm(skia_dir, out_dir):
       '-DDAWN_ENABLE_VULKAN=OFF',
       '-DDAWN_ENABLE_OPENGLES=OFF',
       '-DDAWN_ENABLE_NULL=ON',
+      '-DCMAKE_CXX_STANDARD=17',
       '-DDAWN_ENABLE_INSTALL=OFF',
       '-DTINT_ENABLE_INSTALL=OFF',
       '-DTINT_BUILD_HLSL_WRITER=OFF',
