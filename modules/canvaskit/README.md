@@ -8,24 +8,11 @@ CanvasKit has no other external source dependencies.
 To build with GN, you need to have followed the instructions to download Skia and its deps
 <https://skia.org/docs/user/download>.
 
-To compile CanvasKit, you will first need to [download and activate `emscripten`][1] using the
-script in `//bin/activate-emsdk` (or `//tools/git-sync-deps` which also calls activate-emsdk).
-This places the associated files in `//third_party/externals/emsdk` and the GN[2] build scripts
-will use those by default.
-The compile.sh script automates the default GN settings; users are free to set their own. If users
-want to use their own version of emscripten, they should set the `skia_emsdk_dir` argument
-(see `//skia/gn/toolchain/wasm.gni`). For other available arguments, see
-`//modules/canvaskit/BUILD.gn`.
+To compile CanvasKit for WASM, you need to install [wasi-sdk][1] and set the `skia_wasm_sdk`
+GN argument to point to the wasi-sdk installation directory.
+For other available arguments, see `//modules/canvaskit/BUILD.gn`.
 
-[1]: https://emscripten.org/
-[2]: https://chromium.googlesource.com/chromium/src/tools/gn/+/48062805e19b4697c5fbd926dc649c78b6aaa138/README.md
-
-### MacOS specific notes
-Make sure you have Python3 installed, otherwise the downloading emscripten toolchain
-can fail with errors about SSL certificates. <https://github.com/emscripten-core/emsdk/pull/273>
-
-See also <https://github.com/emscripten-core/emscripten/issues/9036#issuecomment-532092743>
-for a solution to Python3 using the wrong certificates.
+[1]: https://github.com/WebAssembly/wasi-sdk
 
 # Compile and Run Local Example
 
@@ -41,14 +28,6 @@ make local-example
 This will print a local endpoint for viewing the example.  You can experiment
 with the CanvasKit API by modifying `./npm_build/example.html` and refreshing
 the page. For some more experimental APIs, there's also `./npm_build/extra.html`.
-
-For other available build targets, see `Makefile` and `compile.sh`.
-For example, building a stripped-down version of CanvasKit with no text support or
-any of the "extras", one might run:
-
-    ./compile.sh no_skottie no_font
-
-Such a stripped-down version is about half the size of the default release build.
 
 If CanvasKit fails to build and you are getting compile errors that don't look like Skia code,
 you may need to do a fresh install of the npm modules. You can do this by finding the .dts file
@@ -125,15 +104,6 @@ When dealing with CanvasKit in our CI, we use Docker. Check out
 $SKIA_ROOT/infra/wasm-common/docker/README.md for more on building/editing the
 images used for building and testing.
 
-## Updating the version of Emscripten we build/test with
-
-This presumes you have updated emscripten locally to a newer version of the
-sdk and verified/fixed any build issues that have arisen.
-
-  1. Edit `//bin/activate-emsdk` to install and activate the desired version of Emscripten.
-  2. Upload a CL with all the changes. Run all .+CanvasKit jobs to make sure the new builds pass.
-  3. Send out CL for review. Feel free to point the reviewer at these steps.
-
 ## Running Skia's GMs and Unit Tests against wasm+WebGL ##
 
 General Tips:
@@ -144,24 +114,8 @@ General Tips:
 
 ### Debugging some GMs / Unit Tests
 For faster cycle time, it is recommended to focus on specific GMs instead of re-compiling all
-of them. This can be done by modifying the `compile_gm.sh` script (but not checking this in)
-to set `GMS_TO_BUILD` and/or `TESTS_TO_BUILD` to a minimal set of files. There's an `if false`
-that can be commented out to assist with this.
-
-Run `make gm_tests` or `make_gm_tests_debug` from this folder. This will produce a .js and .wasm
-in a (not checked in) `build` subfolder.
-
-Run `make single-gm` and navigate to <http://localhost:8000/wasm_tools/gms.html>. This will load
-that html file and the freshly built wasm_gm_tests binary and run a single GM and unit test that
-was compiled in. Feel free to modify //modules/canvaskit/wasm_tools/gms.html to run the specific
-GM/unit test or tests that you care about.
+of them.
 
 ### Testing all GMs / Unit Tests
-With the current GN build, this can take quite a while to compile and re-compile (the upcoming
-Bazel build should alleviate this).
-
-Run `make gm_tests` or `make_gm_tests_debug` from this folder. This will produce a .js and .wasm
-in a (not checked in) `build` subfolder.
-
 Change directory to `//tools/run-wasm-gm-tests`. Run `make run_local`, which will put all PNGs
 produced by GMs into `/tmp/wasm-gmtests` and run all unit tests.
