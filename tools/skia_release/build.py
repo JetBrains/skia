@@ -224,7 +224,7 @@ def main():
         'skia_enable_svg=true',
         'skia_use_expat=true',
         'extra_cflags_cc+=["-std=c++20"]',
-        'skia_enable_optimize_size=true',
+        'skia_enable_optimize_size=' + ('true' if build_type == 'Release' else 'false'),
         'skia_wasm_sdk="' + wasi_sdk + '"',
         'extra_cflags+=["--target=wasm32-wasip1", "-flto=thin", "--sysroot=' + sysroot + '", "-I' + gl_headers + '", "-I' + egl_headers + '", "-mllvm", "-wasm-enable-sjlj", "-mexception-handling", "-D_WASI_EMULATED_MMAN", "-D_WASI_EMULATED_SIGNAL", "-D_WASI_EMULATED_PROCESS_CLOCKS", "-D_WASI_EMULATED_GETPID", "-DU_HAVE_TZSET=0", "-DU_HAVE_TIMEZONE=0", "-DU_HAVE_TZNAME=0"]',
         'extra_cflags_cc+=["--target=wasm32-wasip1", "--sysroot=' + sysroot + '", "-I' + gl_headers + '", "-I' + egl_headers + '", "-mllvm", "-wasm-enable-sjlj", "-mexception-handling", "-D_WASI_EMULATED_MMAN", "-D_WASI_EMULATED_SIGNAL", "-D_WASI_EMULATED_PROCESS_CLOCKS", "-D_WASI_EMULATED_GETPID", "-DU_HAVE_TZSET=0", "-DU_HAVE_TIMEZONE=0", "-DU_HAVE_TZNAME=0"]',
