@@ -6,7 +6,13 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
 apt-get install binutils build-essential -y
 apt-get install software-properties-common -y
-apt-get install git curl wget cmake -y
+apt-get install git curl wget -y
+
+# Install CMake 3.28 (Dawn requires >= 3.22, Ubuntu 20.04 only has 3.16)
+CMAKE_VERSION=3.28.6
+wget -q "https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz" -O /tmp/cmake.tar.gz
+tar xf /tmp/cmake.tar.gz --strip-components=1 -C /usr/local
+rm /tmp/cmake.tar.gz
 
 apt-get install python3.9 -y
 update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.9 100
