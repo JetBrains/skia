@@ -55,8 +55,9 @@ GrGLStandard GrGLGetStandardInUseFromString(const char* versionString) {
         return kWebGL_GrGLStandard;
     }
 
-    n = sscanf(versionString, "OpenGL ES %d.%d WebGL", &major, &minor);
-    if (2 == n) {
+    int pos = 0;
+    n = sscanf(versionString, "OpenGL ES %d.%d WebGL%n", &major, &minor, &pos);
+    if (2 == n && pos > 0) {
         return kWebGL_GrGLStandard;
     }
 
@@ -108,8 +109,9 @@ GrGLVersion GrGLGetVersionFromString(const char* versionString) {
         return GR_GL_VER(major, minor);
     }
 
-    n = sscanf(versionString, "OpenGL ES %d.%d WebGL", &major, &minor);
-    if (2 == n) {
+    int pos = 0;
+    n = sscanf(versionString, "OpenGL ES %d.%d WebGL%n", &major, &minor, &pos);
+    if (2 == n && pos > 0) {
         if (major >= 3) {
             return GR_GL_VER(2, 0);
         }
