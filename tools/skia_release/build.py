@@ -145,20 +145,20 @@ def main():
     else:
       args += ['extra_cflags+=["-stdlib=libc++", "-mmacosx-version-min=10.13"]']
   elif target == 'linux':
-    args += ['skia_use_vulkan=true']
+    args += [
+        'skia_use_vulkan=true',
+        'skia_use_egl=true',
+        'cc="gcc-10"',
+        'cxx="g++-10"',
+    ]
     if machine == 'arm64':
       args += [
           'skia_gl_standard="gles"',
-          'skia_use_egl=true',
           'extra_cflags_cc+=["-fno-exceptions", "-fno-rtti", "-D_GLIBCXX_USE_CXX11_ABI=0", "-mno-outline-atomics"]',
-          'cc="gcc-10"',
-          'cxx="g++-10"',
       ]
     else:
       args += [
           'extra_cflags_cc+=["-fno-exceptions", "-fno-rtti","-D_GLIBCXX_USE_CXX11_ABI=0"]',
-          'cc="gcc-10"',
-          'cxx="g++-10"',
       ]
   elif target == 'windows':
     if enable_graphite_dawn:
