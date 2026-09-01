@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+from dataclasses import dataclass
 import os
 from pathlib import Path
 import platform
@@ -13,12 +14,61 @@ SKIA_ROOT = SCRIPT_DIR.parent.parent
 ICU_ROOT = SKIA_ROOT / "third_party" / "externals" / "icu"
 
 
+@dataclass
+class Msys2Tools:
+    bin_dir: Path
+    bash: Path
+    make: Path
+    patch: Path
+    clang_bin: Path
+    clang: Path
+    clangxx: Path
+
+
 def shell_path(path):
     if platform.system() == "Windows":
         return subprocess.check_output(
             ["cygpath", "--unix", str(path)], text=True
         ).strip()
     return Path(path).as_posix()
+
+
+def resolve_msys2_tools() -> Msys2Tools:
+    msys_location = os.environ.get("MSYS2_LOCATION")
+    if not msys_location:
+        raise SystemExit(
+            "MSYS2_LOCATION is required to generate ICU data on Windows"
+        )
+
+    msys_root = Path(msys_location)
+    bin_dir = msys_root / "usr" / "bin"
+    clang_bin = msys_root / "clang64" / "bin"
+    tools = Msys2Tools(
+        bin_dir=bin_dir,
+        bash=bin_dir / "bash.exe",
+        make=bin_dir / "make.exe",
+        patch=bin_dir / "patch.exe",
+        clang_bin=clang_bin,
+        clang=clang_bin / "clang.exe",
+        clangxx=clang_bin / "clang++.exe",
+    )
+    missing_tools = [
+        tool
+        for tool in (
+            tools.bash,
+            tools.make,
+            tools.patch,
+            tools.clang,
+            tools.clangxx,
+        )
+        if not tool.is_file()
+    ]
+    if missing_tools:
+        raise SystemExit(
+            "Missing MSYS2 build tools: "
+            + ", ".join(map(str, missing_tools))
+        )
+    return tools
 
 
 def parse_args():
@@ -64,9 +114,10 @@ def main():
             f"Filtered ICU data generation is not supported on {host_system}"
         )
 
-    # On Windows, use the MSYS Bash that launched the build. A bare `bash`
-    # can resolve to the WSL launcher instead.
-    bash = os.environ.get("SHELL", "bash") if host_system == "Windows" else "bash"
+    msys2_tools = resolve_msys2_tools() if host_system == "Windows" else None
+    bash = msys2_tools.bash if msys2_tools else "bash"
+    make = msys2_tools.make if msys2_tools else "make"
+    patch = msys2_tools.patch if msys2_tools else "patch"
 
     shutil.rmtree(build_dir, ignore_errors=True)
     build_dir.mkdir(parents=True)
@@ -75,7 +126,7 @@ def main():
     filter_file = build_dir / "filter.json"
     shutil.copyfile(source_filter, filter_file)
     subprocess.run(
-        ["patch", "--batch", str(filter_file), str(filter_patch)],
+        [patch, "--batch", str(filter_file), str(filter_patch)],
         cwd=build_dir,
         check=True,
     )
@@ -101,12 +152,12 @@ def main():
     env = os.environ.copy()
     env["ICU_DATA_FILTER_FILE"] = shell_path(filter_file)
     configure_args = []
-    if host_system == "Windows":
-        msys_root = Path(bash).parents[2]
-        clang_bin = msys_root / "clang64" / "bin"
-        env["CC"] = shell_path(clang_bin / "clang.exe")
-        env["CXX"] = shell_path(clang_bin / "clang++.exe")
-        env["PATH"] = str(clang_bin) + os.pathsep + env["PATH"]
+    if msys2_tools:
+        env["CC"] = shell_path(msys2_tools.clang)
+        env["CXX"] = shell_path(msys2_tools.clangxx)
+        env["PATH"] = os.pathsep.join(
+            (str(msys2_tools.clang_bin), str(msys2_tools.bin_dir), env["PATH"])
+        )
         # ICU source data is UTF-8, while Windows otherwise uses its system
         # code page when tools such as genrb read it.
         env["CPPFLAGS"] = (
@@ -132,7 +183,7 @@ def main():
         check=True,
     )
     subprocess.run(
-        ["make", "-j", str(os.cpu_count() or 1)],
+        [make, "-j", str(os.cpu_count() or 1)],
         cwd=icu_build_dir,
         env=env,
         check=True,
