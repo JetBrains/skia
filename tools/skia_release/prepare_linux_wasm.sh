@@ -7,6 +7,10 @@ apt-get update -y
 apt-get install binutils build-essential -y
 apt-get install software-properties-common -y
 apt-get install git curl wget -y
+# clang is only used for the compilation of the dawn headers.
+# In the make process, the compiler is rather irrelevant in that aspect.
+# So we intentionally ignore the version requirement of >= 21 here.
+apt-get install clang -y
 
 # Install CMake 3.30.9 (Skia states that dawn requires >= 3.30, Ubuntu 20.04 only has 3.16)
 CMAKE_VERSION=3.30.9
