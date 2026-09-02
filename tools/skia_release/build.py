@@ -67,10 +67,9 @@ def ninja_path(host):
 
 
 def generate_dawn_headers_for_wasm(skia_dir, out_dir):
-  """Run build_dawn.py and use the generated headers it leaves behind."""
+  """Generate Dawn headers using build_dawn.py."""
   build_dir = os.path.join(out_dir, 'cmake_dawn_headers_host')
   gen_dir = os.path.join(out_dir, 'gen', 'third_party', 'dawn')
-  generated_headers_src = os.path.join(build_dir, 'gen', 'include')
   generated_headers_dest = os.path.join(gen_dir, 'include')
   cc = shutil.which('clang')
   cxx = shutil.which('clang++')
@@ -87,14 +86,17 @@ def generate_dawn_headers_for_wasm(skia_dir, out_dir):
       os.path.dirname(cxx),
       env.get('PATH', ''),
   ])
+  old_archive = os.path.join(out_dir, 'libdawn_headers_for_wasm.a')
+  if os.path.exists(old_archive):
+    os.remove(old_archive)
 
   print('> Generating Dawn headers for wasm')
-  cmd = [
+  subprocess.check_call([
       sys.executable,
       os.path.join(skia_dir, 'third_party', 'dawn', 'build_dawn.py'),
       '--cc=' + cc,
       '--cxx=' + cxx,
-      '--output_path=' + os.path.join(out_dir, 'libdawn_headers_for_wasm.a'),
+      '--output_path=' + os.path.join(gen_dir, 'dawn_headers_for_wasm.stamp'),
       '--depfile_path=' + os.path.join(gen_dir, 'libdawn_headers_for_wasm.d'),
       '--gen_dir=' + gen_dir,
       '--target_os=' + host_os,
@@ -106,23 +108,8 @@ def generate_dawn_headers_for_wasm(skia_dir, out_dir):
       '--dawn_enable_opengles=false',
       '--dawn_enable_metal=false',
       '--dawn_enable_vulkan=false',
-  ]
-  try:
-    subprocess.check_call(cmd, cwd=skia_dir, env=env)
-  except subprocess.CalledProcessError:
-    if not (os.path.isdir(os.path.join(generated_headers_src, 'dawn')) and
-            os.path.isdir(os.path.join(generated_headers_src, 'webgpu'))):
-      raise
-    if os.path.exists(generated_headers_dest):
-      shutil.rmtree(generated_headers_dest)
-    shutil.copytree(
-        os.path.join(generated_headers_src, 'dawn'),
-        os.path.join(generated_headers_dest, 'dawn'),
-        dirs_exist_ok=True)
-    shutil.copytree(
-        os.path.join(generated_headers_src, 'webgpu'),
-        os.path.join(generated_headers_dest, 'webgpu'),
-        dirs_exist_ok=True)
+      '--headers_only',
+  ], cwd=skia_dir, env=env)
   return os.path.abspath(generated_headers_dest)
 
 
