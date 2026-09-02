@@ -1,6 +1,7 @@
 #! /usr/bin/env python3
 
 import os
+import platform
 import shutil
 import subprocess
 import sys
@@ -66,83 +67,62 @@ def ninja_path(host):
 
 
 def generate_dawn_headers_for_wasm(skia_dir, out_dir):
-  """Generate Dawn headers using CMake for wasm builds.
-
-  Dawn's CMake build is skipped for wasm in GN, but we still need the generated
-  headers (e.g. dawn/webgpu_cpp.h). This runs CMake to build just the header
-  generation targets.
-  """
-  cmake_exe = shutil.which('cmake')
-  if not cmake_exe:
-    raise Exception('cmake not found in PATH; needed to generate Dawn headers for wasm')
-
-  ninja_exe = shutil.which('ninja')
-  if not ninja_exe:
-    # Try Skia's bundled ninja
-    bundled_ninja = os.path.join(skia_dir, 'third_party', 'ninja', 'ninja')
-    if os.path.isfile(bundled_ninja):
-      ninja_exe = bundled_ninja
-    else:
-      raise Exception('ninja not found in PATH; needed to generate Dawn headers for wasm')
-
-  dawn_dir = os.path.join(skia_dir, 'third_party', 'externals', 'dawn')
-  build_dir = os.path.join(out_dir, 'cmake_dawn_headers')
+  """Run build_dawn.py and use the generated headers it leaves behind."""
+  build_dir = os.path.join(out_dir, 'cmake_dawn_headers_host')
   gen_dir = os.path.join(out_dir, 'gen', 'third_party', 'dawn')
-
-  # Import get_third_party_locations from Dawn's cmake_utils
-  dawn_scripts = os.path.join(skia_dir, 'third_party', 'dawn')
-  sys.path.insert(0, dawn_scripts)
-  from cmake_utils import get_third_party_locations
-  sys.path.pop(0)
-
-  configure_cmd = [
-      cmake_exe,
-      '-S', dawn_dir,
-      '-B', build_dir,
-      '-G', 'Ninja',
-      '-DCMAKE_MAKE_PROGRAM=' + ninja_exe,
-      '-DDAWN_BUILD_MONOLITHIC_LIBRARY=OFF',
-      '-DDAWN_BUILD_SAMPLES=OFF',
-      '-DDAWN_BUILD_TESTS=OFF',
-      '-DDAWN_BUILD_BENCHMARKS=OFF',
-      '-DDAWN_ENABLE_D3D11=OFF',
-      '-DDAWN_ENABLE_D3D12=OFF',
-      '-DDAWN_ENABLE_METAL=OFF',
-      '-DDAWN_ENABLE_VULKAN=OFF',
-      '-DDAWN_ENABLE_OPENGLES=OFF',
-      '-DDAWN_ENABLE_NULL=ON',
-      '-DDAWN_USE_X11=OFF',
-      '-DDAWN_USE_WAYLAND=OFF',
-      '-DCMAKE_CXX_STANDARD=17',
-      '-DCMAKE_CXX_STANDARD_REQUIRED=ON',
-      '-DABSL_INTERNAL_AT_LEAST_CXX17=ON',
-      '-DDAWN_ENABLE_INSTALL=OFF',
-      '-DTINT_ENABLE_INSTALL=OFF',
-      '-DTINT_BUILD_HLSL_WRITER=OFF',
-  ] + get_third_party_locations()
-
-  print('> Generating Dawn headers for wasm')
-  subprocess.check_call(configure_cmd)
-  # Build only the header generation targets
-  subprocess.check_call([ninja_exe, '-C', build_dir, 'dawn_headers', 'dawncpp_headers', 'webgpu_headers_gen'])
-
-  # Copy generated headers to where GN expects them
   generated_headers_src = os.path.join(build_dir, 'gen', 'include')
   generated_headers_dest = os.path.join(gen_dir, 'include')
+  cc = shutil.which('clang')
+  cxx = shutil.which('clang++')
+  host_os = {'macos': 'mac', 'windows': 'win'}.get(common.host(), common.host())
+  host_cpu = {
+      'AMD64': 'x64',
+      'x86_64': 'x64',
+      'arm64': 'arm64',
+      'aarch64': 'arm64',
+  }[platform.machine()]
+  env = os.environ.copy()
+  env['PATH'] = os.pathsep.join([
+      os.path.join(skia_dir, 'third_party', 'ninja'),
+      os.path.dirname(cxx),
+      env.get('PATH', ''),
+  ])
 
-  if os.path.exists(generated_headers_dest):
-    shutil.rmtree(generated_headers_dest)
-
-  shutil.copytree(
-      os.path.join(generated_headers_src, 'dawn'),
-      os.path.join(generated_headers_dest, 'dawn'),
-      dirs_exist_ok=True)
-  shutil.copytree(
-      os.path.join(generated_headers_src, 'webgpu'),
-      os.path.join(generated_headers_dest, 'webgpu'),
-      dirs_exist_ok=True)
-
-
+  print('> Generating Dawn headers for wasm')
+  cmd = [
+      sys.executable,
+      os.path.join(skia_dir, 'third_party', 'dawn', 'build_dawn.py'),
+      '--cc=' + cc,
+      '--cxx=' + cxx,
+      '--output_path=' + os.path.join(out_dir, 'libdawn_headers_for_wasm.a'),
+      '--depfile_path=' + os.path.join(gen_dir, 'libdawn_headers_for_wasm.d'),
+      '--gen_dir=' + gen_dir,
+      '--target_os=' + host_os,
+      '--target_cpu=' + host_cpu,
+      '--build_type=Release',
+      '--build_dir=' + build_dir,
+      '--dawn_enable_d3d11=false',
+      '--dawn_enable_d3d12=false',
+      '--dawn_enable_opengles=false',
+      '--dawn_enable_metal=false',
+      '--dawn_enable_vulkan=false',
+  ]
+  try:
+    subprocess.check_call(cmd, cwd=skia_dir, env=env)
+  except subprocess.CalledProcessError:
+    if not (os.path.isdir(os.path.join(generated_headers_src, 'dawn')) and
+            os.path.isdir(os.path.join(generated_headers_src, 'webgpu'))):
+      raise
+    if os.path.exists(generated_headers_dest):
+      shutil.rmtree(generated_headers_dest)
+    shutil.copytree(
+        os.path.join(generated_headers_src, 'dawn'),
+        os.path.join(generated_headers_dest, 'dawn'),
+        dirs_exist_ok=True)
+    shutil.copytree(
+        os.path.join(generated_headers_src, 'webgpu'),
+        os.path.join(generated_headers_dest, 'webgpu'),
+        dirs_exist_ok=True)
   return os.path.abspath(generated_headers_dest)
 
 

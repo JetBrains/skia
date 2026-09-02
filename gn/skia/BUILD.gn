@@ -304,6 +304,10 @@ config("default") {
     }
   }
 
+  if (is_canvaskit) {
+    cflags += [ "--sysroot=$skia_emsdk_dir/upstream/emscripten/cache/sysroot" ]
+    ldflags += [ "--sysroot=$skia_emsdk_dir/upstream/emscripten/cache/sysroot" ]
+  }
 
   # sanitize only applies to the default toolchain (usually the target).
   if (current_toolchain != default_toolchain) {
