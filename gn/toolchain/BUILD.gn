@@ -459,19 +459,11 @@ if (is_wasm) {
   gcc_like_toolchain("wasm") {
     cpu = "wasm"
     os = "wasm"
-    if (host_os == "win") {
-      ar = "$skia_emsdk_dir/upstream/emscripten/emar.bat"
-      cc = "$skia_emsdk_dir/upstream/emscripten/emcc.bat"
-      cxx = "$skia_emsdk_dir/upstream/emscripten/em++.bat"
-    } else {
-      ar = "$skia_emsdk_dir/upstream/emscripten/emar"
-      cc = "$skia_emsdk_dir/upstream/emscripten/emcc"
-      cxx = "$skia_emsdk_dir/upstream/emscripten/em++"
-    }
+    assert(skia_wasm_sdk != "",
+           "skia_wasm_sdk must be set for wasm builds (point it to a wasi-sdk installation)")
+    ar = "$skia_wasm_sdk/bin/llvm-ar"
+    cc = "$skia_wasm_sdk/bin/clang"
+    cxx = "$skia_wasm_sdk/bin/clang++"
     link = cxx
-
-    if (!is_canvaskit) {
-      deps = [ "//gn/toolchain/emsdk:activate(//gn/toolchain:$host_toolchain)" ]
-    }
   }
 }

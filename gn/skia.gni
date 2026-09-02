@@ -10,6 +10,7 @@ is_skia_dev_build = is_skia_standalone && !is_official_build
 
 declare_args() {
   is_canvaskit = false
+  skia_wasm_sdk = ""
 }
 
 declare_args() {
@@ -126,7 +127,9 @@ declare_args() {
   #
   # While GCC is supported, it lacks CI coverage to catch regressions.
   # Therefore, we disable it by default on GCC builds.
-  skia_use_partition_alloc = is_clang
+  # PartitionAlloc depends on platform memory / POSIX APIs that are not
+  # available for Skia's WASM targets.
+  skia_use_partition_alloc = is_clang && !is_wasm
   skia_partition_alloc_dir = "//third_party/externals/partition_alloc"
 }
 
