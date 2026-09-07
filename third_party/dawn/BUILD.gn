@@ -131,6 +131,42 @@ group("tint") {
   public_configs = [ ":tint_api_config" ]
 }
 
+if (current_toolchain == "//gn/toolchain:$host_toolchain") {
+  config("dawn_headers_for_wasm_config") {
+    include_dirs = [
+      "../externals/dawn",
+      "../externals/dawn/include",
+      "$root_gen_dir/third_party/dawn/include",
+    ]
+  }
+
+  action("dawn_headers_for_wasm") {
+    script = "build_dawn.py"
+
+    sources = [
+      "build_dawn.py",
+      "cmake_utils.py",
+    ]
+
+    outputs = [ "$root_gen_dir/third_party/dawn/dawn_headers_for_wasm.stamp" ]
+    depfile = "$root_gen_dir/third_party/dawn/dawn_headers_for_wasm.d"
+
+    args = [
+      "--cc=" + _cc,
+      "--cxx=" + _cxx,
+      "--output_path=" + rebase_path(outputs[0], root_build_dir),
+      "--depfile_path=" + rebase_path(depfile, root_build_dir),
+      "--gen_dir=" +
+          rebase_path("$root_gen_dir/third_party/dawn", root_build_dir),
+      "--target_os=" + current_os,
+      "--target_cpu=" + current_cpu,
+      "--build_type=Release",
+      "--build_dir=cmake_dawn_headers_for_wasm",
+      "--headers_only",
+    ]
+  }
+}
+
 config("dawn_api_config") {
   if (!is_canvaskit) {
     include_dirs = [
@@ -314,9 +350,13 @@ config("dawn_defines") {
 }
 
 group("dawn") {
-  public_deps = [ ":dawn_cmake" ]
-
-  public_configs = [ ":dawn_api_config" ]
-
-  all_dependent_configs = [ ":dawn_defines" ]
+  if (is_wasm) {
+    public_deps = [ ":dawn_headers_for_wasm(//gn/toolchain:$host_toolchain)" ]
+    public_configs =
+        [ ":dawn_headers_for_wasm_config(//gn/toolchain:$host_toolchain)" ]
+  } else {
+    public_deps = [ ":dawn_cmake" ]
+    public_configs = [ ":dawn_api_config" ]
+    all_dependent_configs = [ ":dawn_defines" ]
+  }
 }

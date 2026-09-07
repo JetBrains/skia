@@ -759,7 +759,7 @@ if (skia_compile_sksl_tests) {
       "//third_party/spirv-cross:spirv_cross",
     ]
     if (skia_use_dawn && !is_wasm) {
-          deps += [ "//third_party/dawn:tint" ]
+      deps += [ "//third_party/dawn:tint" ]
     }
   }
 
@@ -915,9 +915,7 @@ optional("gpu_shared") {
 
   if (skia_use_dawn) {
     public_defines += [ "SK_DAWN" ]
-    if (!is_wasm) {
-          public_deps += [ "//third_party/dawn" ]
-    }
+    public_deps += [ "//third_party/dawn" ]
   }
 
   if (skia_use_direct3d) {
@@ -1137,7 +1135,8 @@ if (skia_enable_ganesh && skia_gpu_as_extension) {
           libs += [ "EGL" ]
         }
       } else if (skia_use_webgl) {
-        sources += [ "src/gpu/ganesh/gl/webgl/GrGLMakeNativeInterface_webgl.cpp" ]
+        sources +=
+            [ "src/gpu/ganesh/gl/webgl/GrGLMakeNativeInterface_webgl.cpp" ]
       } else if (is_linux && skia_use_x11) {
         sources += [
           "src/gpu/ganesh/gl/glx/GrGLMakeGLXInterface.cpp",
@@ -1470,9 +1469,7 @@ if (skia_enable_graphite && skia_gpu_as_extension) {
 
     public += skia_graphite_dawn_public
     sources += skia_graphite_dawn_sources
-    if (!is_wasm) {
-        deps += [ "//third_party/dawn" ]
-    }
+    deps += [ "//third_party/dawn" ]
 
     if (skia_enable_precompile) {
       public += skia_graphite_precompile_public
@@ -2762,7 +2759,7 @@ if (skia_enable_tools) {
         all_dependent_configs += [ ":vulkan_memory_allocator" ]
       }
 
-      if (skia_use_dawn && !is_wasm) {
+      if (skia_use_dawn) {
         public_deps += [ "//third_party/dawn" ]
         if (is_clang) {
           cflags_cc = [ "-Wno-microsoft-cast" ]

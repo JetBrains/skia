@@ -1,7 +1,6 @@
 #! /usr/bin/env python3
 
 import os
-import platform
 import shutil
 import subprocess
 import sys
@@ -57,6 +56,11 @@ def prepare_skia_checkout(skia_dir):
 
   print("> Fetching ninja")
   subprocess.check_call([sys.executable, "bin/fetch-ninja"], cwd=skia_dir)
+  ninja_dir = os.path.join(skia_dir, 'third_party', 'ninja')
+  os.environ['PATH'] = os.pathsep.join([
+      ninja_dir,
+      os.environ.get('PATH', ''),
+  ])
 
   if common.host() == 'windows':
     patch_windows_toolchain(skia_dir)
@@ -64,53 +68,6 @@ def prepare_skia_checkout(skia_dir):
 
 def ninja_path(host):
   return os.path.join('third_party', 'ninja', 'ninja.exe' if host == 'windows' else 'ninja')
-
-
-def generate_dawn_headers_for_wasm(skia_dir, out_dir):
-  """Generate Dawn headers using build_dawn.py."""
-  build_dir = os.path.join(out_dir, 'cmake_dawn_headers_host')
-  gen_dir = os.path.join(out_dir, 'gen', 'third_party', 'dawn')
-  generated_headers_dest = os.path.join(gen_dir, 'include')
-  cc = shutil.which('clang')
-  cxx = shutil.which('clang++')
-  host_os = {'macos': 'mac', 'windows': 'win'}.get(common.host(), common.host())
-  host_cpu = {
-      'AMD64': 'x64',
-      'x86_64': 'x64',
-      'arm64': 'arm64',
-      'aarch64': 'arm64',
-  }[platform.machine()]
-  env = os.environ.copy()
-  env['PATH'] = os.pathsep.join([
-      os.path.join(skia_dir, 'third_party', 'ninja'),
-      os.path.dirname(cxx),
-      env.get('PATH', ''),
-  ])
-  old_archive = os.path.join(out_dir, 'libdawn_headers_for_wasm.a')
-  if os.path.exists(old_archive):
-    os.remove(old_archive)
-
-  print('> Generating Dawn headers for wasm')
-  subprocess.check_call([
-      sys.executable,
-      os.path.join(skia_dir, 'third_party', 'dawn', 'build_dawn.py'),
-      '--cc=' + cc,
-      '--cxx=' + cxx,
-      '--output_path=' + os.path.join(gen_dir, 'dawn_headers_for_wasm.stamp'),
-      '--depfile_path=' + os.path.join(gen_dir, 'libdawn_headers_for_wasm.d'),
-      '--gen_dir=' + gen_dir,
-      '--target_os=' + host_os,
-      '--target_cpu=' + host_cpu,
-      '--build_type=Release',
-      '--build_dir=' + build_dir,
-      '--dawn_enable_d3d11=false',
-      '--dawn_enable_d3d12=false',
-      '--dawn_enable_opengles=false',
-      '--dawn_enable_metal=false',
-      '--dawn_enable_vulkan=false',
-      '--headers_only',
-  ], cwd=skia_dir, env=env)
-  return os.path.abspath(generated_headers_dest)
 
 
 def main():
@@ -125,9 +82,6 @@ def main():
   ndk = common.ndk()
   wasi_sdk = common.wasi_sdk()
   gpu_as_extension = common.gpu_as_extension()
-  if target == 'wasm':
-    # WASM release packages emit Ganesh as a separate extension library.
-    gpu_as_extension = True
   enable_ganesh = common.enable_ganesh()
   enable_graphite = common.enable_graphite()
   enable_graphite_dawn = common.enable_graphite_dawn()
@@ -245,12 +199,6 @@ def main():
     sysroot = os.path.abspath(os.path.join(wasi_sdk, 'share', 'wasi-sysroot'))
     gl_headers = os.path.abspath(os.path.join(skia_dir, 'third_party/externals/opengl-registry/api'))
     egl_headers = os.path.abspath(os.path.join(skia_dir, 'third_party/externals/egl-registry/api'))
-    dawn_headers = os.path.abspath(os.path.join(skia_dir, 'third_party/externals/dawn/include'))
-    dawn_root = os.path.abspath(os.path.join(skia_dir, 'third_party/externals/dawn'))
-    dawn_gen_headers = ''
-    out_dir = os.path.join('out', build_type + '-' + target + '-' + machine)
-    if enable_graphite_dawn:
-      dawn_gen_headers = generate_dawn_headers_for_wasm(skia_dir, out_dir)
     args += [
         'skia_use_dng_sdk=false',
         'skia_use_freetype=true',
@@ -280,8 +228,8 @@ def main():
         'extra_cflags_cc+=["-std=c++20"]',
         'skia_enable_optimize_size=' + ('true' if build_type == 'Release' else 'false'),
         'skia_wasm_sdk="' + wasi_sdk + '"',
-        'extra_cflags+=["--target=wasm32-wasip1", "-flto=thin", "--sysroot=' + sysroot + '", "-I' + gl_headers + '", "-I' + egl_headers + '", "-I' + dawn_headers + '", "-I' + dawn_root + '", "-I' + dawn_gen_headers + '", "-mllvm", "-wasm-enable-sjlj", "-mexception-handling", "-D_WASI_EMULATED_MMAN", "-D_WASI_EMULATED_SIGNAL", "-D_WASI_EMULATED_PROCESS_CLOCKS", "-D_WASI_EMULATED_GETPID", "-DU_HAVE_TZSET=0", "-DU_HAVE_TIMEZONE=0", "-DU_HAVE_TZNAME=0"]',
-        'extra_cflags_cc+=["--target=wasm32-wasip1", "--sysroot=' + sysroot + '", "-I' + gl_headers + '", "-I' + egl_headers + '", "-I' + dawn_headers + '", "-I' + dawn_root + '", "-I' + dawn_gen_headers + '", "-mllvm", "-wasm-enable-sjlj", "-mexception-handling", "-D_WASI_EMULATED_MMAN", "-D_WASI_EMULATED_SIGNAL", "-D_WASI_EMULATED_PROCESS_CLOCKS", "-D_WASI_EMULATED_GETPID", "-DU_HAVE_TZSET=0", "-DU_HAVE_TIMEZONE=0", "-DU_HAVE_TZNAME=0"]',
+        'extra_cflags+=["--target=wasm32-wasip1", "-flto=thin", "--sysroot=' + sysroot + '", "-I' + gl_headers + '", "-I' + egl_headers + '", "-mllvm", "-wasm-enable-sjlj", "-mexception-handling", "-D_WASI_EMULATED_MMAN", "-D_WASI_EMULATED_SIGNAL", "-D_WASI_EMULATED_PROCESS_CLOCKS", "-D_WASI_EMULATED_GETPID", "-DU_HAVE_TZSET=0", "-DU_HAVE_TIMEZONE=0", "-DU_HAVE_TZNAME=0"]',
+        'extra_cflags_cc+=["--target=wasm32-wasip1", "--sysroot=' + sysroot + '", "-I' + gl_headers + '", "-I' + egl_headers + '", "-mllvm", "-wasm-enable-sjlj", "-mexception-handling", "-D_WASI_EMULATED_MMAN", "-D_WASI_EMULATED_SIGNAL", "-D_WASI_EMULATED_PROCESS_CLOCKS", "-D_WASI_EMULATED_GETPID", "-DU_HAVE_TZSET=0", "-DU_HAVE_TIMEZONE=0", "-DU_HAVE_TZNAME=0"]',
         'extra_ldflags+=["--target=wasm32-wasip1", "-flto=thin", "-Wl,--gc-sections", "-Wl,--strip-all", "--sysroot=' + sysroot + '", "-lsetjmp", "-lwasi-emulated-mman", "-lwasi-emulated-signal", "-lwasi-emulated-process-clocks", "-lwasi-emulated-getpid", "-mllvm", "-wasm-enable-sjlj", "-mexception-handling"]',
     ]
 
