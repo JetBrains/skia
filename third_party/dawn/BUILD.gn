@@ -152,8 +152,8 @@ if (current_toolchain == "//gn/toolchain:$host_toolchain") {
     depfile = "$root_gen_dir/third_party/dawn/dawn_headers_for_wasm.d"
 
     args = [
-      "--cc=" + _cc,
-      "--cxx=" + _cxx,
+      "--cc=clang",
+      "--cxx=clang++",
       "--output_path=" + rebase_path(outputs[0], root_build_dir),
       "--depfile_path=" + rebase_path(depfile, root_build_dir),
       "--gen_dir=" +
