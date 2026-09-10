@@ -63,6 +63,11 @@ def main():
       "--dawn_enable_metal", default="false", help="Enable Metal backend.")
   parser.add_argument(
       "--dawn_enable_vulkan", default="false", help="Enable Vulkan backend.")
+  parser.add_argument(
+      "--headers_only",
+      "--headers-only",
+      action="store_true",
+      help="Only generate Dawn headers.")
   args = parser.parse_args()
 
   cmake_exe = shutil.which("cmake")
@@ -82,7 +87,15 @@ def main():
   # The headers are a dependency for all libraries.
   # We want to build the other listed dawn components into one big library.
   build_targets = ["webgpu_headers_gen", "dawn_proc", "dawn_native"]
+  if args.headers_only:
+    build_targets = ["dawn_headers", "dawncpp_headers", "webgpu_headers_gen"]
   depfile_path = args.depfile_path
+  if args.headers_only:
+    args.dawn_enable_d3d11 = "false"
+    args.dawn_enable_d3d12 = "false"
+    args.dawn_enable_opengles = "false"
+    args.dawn_enable_metal = "false"
+    args.dawn_enable_vulkan = "false"
 
   # On Windows, Debug build has CRT compatibility issues with Skia (MTd vs MT).
   # Use RelWithDebInfo instead to keep MT, with optimization flags overridden below.
@@ -127,13 +140,21 @@ def main():
       # in a D3D only build.
       f"-DDAWN_ENABLE_SPIRV_VALIDATION={gn_bool_to_cmake(args.dawn_enable_vulkan)}",
   ]
+  if args.headers_only:
+    configure_cmd += [
+        "-DDAWN_ENABLE_DESKTOP_GL=OFF",
+        "-DDAWN_USE_X11=OFF",
+        "-DDAWN_USE_WAYLAND=OFF",
+        "-DDAWN_USE_WINDOWS_UI=OFF",
+        "-DTINT_BUILD_HLSL_WRITER=OFF",
+    ]
   add_windows_cmake_overrides(configure_cmd, target_os)
   configure_cmd += get_third_party_locations()
 
   if args.enable_rtti:
     configure_cmd.append("-DDAWN_ENABLE_RTTI=ON")
 
-  if target_os == "Linux":
+  if target_os == "Linux" and not args.headers_only:
     configure_cmd.append("-DDAWN_USE_X11=ON")
 
   cxx_flags = args.cxx_flags or []
@@ -146,7 +167,8 @@ def main():
     ld_flags += win_ld
 
     # The D3D backend requires the HLSL writer.
-    configure_cmd.append("-DTINT_BUILD_HLSL_WRITER=ON")
+    if not args.headers_only:
+      configure_cmd.append("-DTINT_BUILD_HLSL_WRITER=ON")
     if args.is_clang and target_cpu == "ARM64":
         clang_target = "--target=arm64-windows"
         cxx_flags.append(clang_target)
@@ -222,6 +244,12 @@ def main():
       os.path.join(generated_headers_src, "webgpu"),
       os.path.join(generated_headers_dest, "webgpu"),
       dirs_exist_ok=True)
+
+  if args.headers_only:
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    open(output_path, "w").close()
+    write_depfile(output_path, depfile_path, [])
+    return
 
   dependencies, object_files = discover_dependencies(build_dir, build_targets)
   write_depfile(output_path, depfile_path, dependencies)

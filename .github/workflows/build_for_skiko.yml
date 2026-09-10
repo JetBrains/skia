@@ -141,7 +141,7 @@ jobs:
         if: ${{ needs.prepare.outputs.should_release == 'true' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - run: python3 tools/skia_release/build.py --skia-dir . --target wasm --machine wasm --build-type ${{ matrix.build_type }} --gpu-as-extension --enable-graphite-dawn
+      - run: python3 tools/skia_release/build.py --skia-dir . --target wasm --machine wasm --build-type ${{ matrix.build_type }} --gpu-as-extension --enable-graphite-dawn --wasi-sdk /opt/wasi-sdk
       - run: python3 tools/skia_release/archive.py --skia-dir . --version ${{ needs.prepare.outputs.version }} --target wasm --machine wasm --build-type ${{ matrix.build_type }} --enable-graphite-dawn
       - uses: actions/upload-artifact@v4
         if: ${{ needs.prepare.outputs.should_release == 'true' }}

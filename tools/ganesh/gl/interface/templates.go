@@ -168,8 +168,9 @@ const ASSEMBLE_INTERFACE_WEBGL = `/*
  */
 #include "include/core/SkRefCnt.h"
 #include "include/gpu/ganesh/gl/GrGLAssembleInterface.h"
+#include "include/gpu/ganesh/gl/GrGLInterface.h"
 
-#if SK_DISABLE_WEBGL_INTERFACE || !defined(__EMSCRIPTEN__)
+#if SK_DISABLE_WEBGL_INTERFACE
 struct GrGLInterface;
 sk_sp<const GrGLInterface> GrGLMakeAssembledWebGLInterface(void *ctx, GrGLGetProc get) {
     return nullptr;
@@ -177,26 +178,31 @@ sk_sp<const GrGLInterface> GrGLMakeAssembledWebGLInterface(void *ctx, GrGLGetPro
 #else
 
 #include "include/gpu/ganesh/gl/GrGLAssembleHelpers.h"
+#include "include/gpu/ganesh/gl/GrGLFunctions.h"
 #include "src/gpu/ganesh/gl/GrGLUtil.h"
-
-// Located https://github.com/emscripten-core/emscripten/tree/7ba7700902c46734987585409502f3c63beb650f/system/include/webgl
-#include <webgl/webgl1.h>
-#include <webgl/webgl1_ext.h>
-#include <webgl/webgl2.h>
-#include <webgl/webgl2_ext.h>
-
-#define GET_PROC(F) functions->f##F = emscripten_gl##F
-#define GET_PROC_SUFFIX(F, S) functions->f##F = emscripten_gl##F##S
-
+ 
+#define GET_PROC(F) functions->f##F = (GrGL##F##Fn*)get(ctx, "gl" #F)
+#define GET_PROC_SUFFIX(F, S) functions->f##F = (GrGL##F##Fn*)get(ctx, "gl" #F #S)
+ 
 sk_sp<const GrGLInterface> GrGLMakeAssembledWebGLInterface(void *ctx, GrGLGetProc get) {
-    const char* verStr = reinterpret_cast<const char*>(glGetString(GR_GL_VERSION));
+    auto get_string = (GrGLGetStringFn*)get(ctx, "glGetString");
+    auto get_stringi = (GrGLGetStringiFn*)get(ctx, "glGetStringi");
+    auto get_integerv = (GrGLGetIntegervFn*)get(ctx, "glGetIntegerv");
+    if (!get_string) {
+        return nullptr;
+    }
+
+    const char* verStr = reinterpret_cast<const char*>(get_string(GR_GL_VERSION));
     GrGLVersion glVer = GrGLGetVersionFromString(verStr);
     if (glVer < GR_GL_VER(1,0)) {
+        SkDebugf("GrGLMakeAssembledWebGLInterface: Failed to parse version string \"%s\"\n", verStr ? verStr : "nullptr");
         return nullptr;
     }
 
     GrGLExtensions extensions;
-    if (!extensions.init(kWebGL_GrGLStandard, glGetString, glGetStringi, glGetIntegerv)) {
+    if (!extensions.init(kWebGL_GrGLStandard, get_string, get_stringi, get_integerv)) {
+        SkDebugf("GrGLMakeAssembledWebGLInterface: Failed to initialize extensions (ver: %s, standard: %d)\n",
+                 verStr ? verStr : "nullptr", kWebGL_GrGLStandard);
         return nullptr;
     }
 

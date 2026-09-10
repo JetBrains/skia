@@ -56,6 +56,11 @@ def prepare_skia_checkout(skia_dir):
 
   print("> Fetching ninja")
   subprocess.check_call([sys.executable, "bin/fetch-ninja"], cwd=skia_dir)
+  ninja_dir = os.path.join(skia_dir, 'third_party', 'ninja')
+  os.environ['PATH'] = os.pathsep.join([
+      ninja_dir,
+      os.environ.get('PATH', ''),
+  ])
 
   if common.host() == 'windows':
     patch_windows_toolchain(skia_dir)
@@ -75,6 +80,7 @@ def main():
   host = common.host()
   target = common.target()
   ndk = common.ndk()
+  wasi_sdk = common.wasi_sdk()
   gpu_as_extension = common.gpu_as_extension()
   enable_ganesh = common.enable_ganesh()
   enable_graphite = common.enable_graphite()
@@ -106,6 +112,7 @@ def main():
       'skia_enable_skottie=true',
       'extra_cflags=[]',
       'extra_cflags_cc=[]',
+      'extra_ldflags=[]',
   ]
 
   if target == 'windows':
@@ -216,8 +223,13 @@ def main():
         'skia_use_vulkan=true',
     ]
   elif target == 'wasm':
+    if not wasi_sdk:
+      raise Exception('--wasi-sdk is required for wasm builds')
     if enable_graphite_dawn:
       args += ['skia_use_webgpu=true']
+    sysroot = os.path.abspath(os.path.join(wasi_sdk, 'share', 'wasi-sysroot'))
+    gl_headers = os.path.abspath(os.path.join(skia_dir, 'third_party/externals/opengl-registry/api'))
+    egl_headers = os.path.abspath(os.path.join(skia_dir, 'third_party/externals/egl-registry/api'))
     args += [
         'skia_use_dng_sdk=false',
         'skia_use_freetype=true',
@@ -240,13 +252,16 @@ def main():
         'skia_enable_fontmgr_custom_directory=false',
         'skia_enable_fontmgr_custom_embedded=true',
         'skia_enable_fontmgr_custom_empty=true',
-        'skia_use_webgl=true',
         'skia_gl_standard="webgl"',
         'skia_use_gl=true',
         'skia_enable_svg=true',
         'skia_use_expat=true',
-        'extra_cflags+=["-DSK_SUPPORT_GPU=1", "-DSK_GL", "-DSK_DISABLE_LEGACY_SHADERCONTEXT", "-sSUPPORT_LONGJMP=wasm"]',
         'extra_cflags_cc+=["-std=c++20"]',
+        'skia_enable_optimize_size=' + ('true' if build_type == 'Release' else 'false'),
+        'skia_wasm_sdk="' + wasi_sdk + '"',
+        'extra_cflags+=["--target=wasm32-wasip1", "-flto=thin", "--sysroot=' + sysroot + '", "-I' + gl_headers + '", "-I' + egl_headers + '", "-mllvm", "-wasm-enable-sjlj", "-mexception-handling", "-D_WASI_EMULATED_MMAN", "-D_WASI_EMULATED_SIGNAL", "-D_WASI_EMULATED_PROCESS_CLOCKS", "-D_WASI_EMULATED_GETPID", "-DU_HAVE_TZSET=0", "-DU_HAVE_TIMEZONE=0", "-DU_HAVE_TZNAME=0"]',
+        'extra_cflags_cc+=["--target=wasm32-wasip1", "--sysroot=' + sysroot + '", "-I' + gl_headers + '", "-I' + egl_headers + '", "-mllvm", "-wasm-enable-sjlj", "-mexception-handling", "-D_WASI_EMULATED_MMAN", "-D_WASI_EMULATED_SIGNAL", "-D_WASI_EMULATED_PROCESS_CLOCKS", "-D_WASI_EMULATED_GETPID", "-DU_HAVE_TZSET=0", "-DU_HAVE_TIMEZONE=0", "-DU_HAVE_TZNAME=0"]',
+        'extra_ldflags+=["--target=wasm32-wasip1", "-flto=thin", "-Wl,--gc-sections", "-Wl,--strip-all", "--sysroot=' + sysroot + '", "-lsetjmp", "-lwasi-emulated-mman", "-lwasi-emulated-signal", "-lwasi-emulated-process-clocks", "-lwasi-emulated-getpid", "-mllvm", "-wasm-enable-sjlj", "-mexception-handling", "-Wl,-z,stack-size=1048576"]',
     ]
 
   if gpu_as_extension:

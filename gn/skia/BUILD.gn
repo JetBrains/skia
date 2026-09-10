@@ -803,38 +803,8 @@ config("executable") {
 }
 
 if (is_wasm) {
-  if (is_canvaskit) {
-    # CK manages its flags separately.
-    config("wasm") {
-    }
-  } else {
-    config("wasm") {
-      common = [
-        "--sysroot=$skia_emsdk_dir/upstream/emscripten/cache/sysroot",
-        # This was introduced after m146, but it breaks Skiko's Emscripten
-        # MAIN_MODULE=2 runtime with memory access out of bounds failures
-        # "-pthread",
-      ]
-      cflags = common
-      ldflags = common
-      ldflags += [
-        "-sDYNAMIC_EXECUTION=0",  # Disallow eval(): widens portability
-        "-sMIN_WEBGL_VERSION=2",
-        "-sMAX_WEBGL_VERSION=2",
-        "-sWASM=1",
-        "-sALLOW_MEMORY_GROWTH=1",
-        "-sSTACK_SIZE=1048576",  # 1 MB
-        "-sEXPORT_ES6=1",
-        "-sMODULARIZE=1",  # Do not pollute global JS scope
-      ]
-      if (is_debug) {
-        ldflags += [
-          "-sASSERTIONS=1",
-          "-sPTHREADS_DEBUG=1",
-          "-gsource-map",
-        ]
-      }
-    }
+  # Wasm flags are passed via extra_cflags in build.py using wasi-sdk.
+  config("wasm") {
   }
 }
 

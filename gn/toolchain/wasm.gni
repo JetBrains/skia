@@ -2,16 +2,10 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-# Defines the configuration of emscripten for building WASM targets.
+# Defines the configuration for building WASM targets.
 import("../skia.gni")
 if (is_canvaskit) {
   import("../../modules/canvaskit/canvaskit.gni")
-}
-
-declare_args() {
-  # The location of an activated emsdk. We default to the one brought in by
-  # DEPS and bin/activate-emsdk.
-  skia_emsdk_dir = rebase_path("../../third_party/externals/emsdk")
 }
 
 # Defines a WASM library target.
