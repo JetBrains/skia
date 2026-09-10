@@ -759,7 +759,7 @@ if (skia_compile_sksl_tests) {
       "//third_party/spirv-cross:spirv_cross",
     ]
     if (skia_use_dawn && !is_wasm) {
-      deps += [ "//third_party/dawn:tint" ]
+          deps += [ "//third_party/dawn:tint" ]
     }
   }
 
@@ -1135,8 +1135,7 @@ if (skia_enable_ganesh && skia_gpu_as_extension) {
           libs += [ "EGL" ]
         }
       } else if (skia_use_webgl) {
-        sources +=
-            [ "src/gpu/ganesh/gl/webgl/GrGLMakeNativeInterface_webgl.cpp" ]
+        sources += [ "src/gpu/ganesh/gl/webgl/GrGLMakeNativeInterface_webgl.cpp" ]
       } else if (is_linux && skia_use_x11) {
         sources += [
           "src/gpu/ganesh/gl/glx/GrGLMakeGLXInterface.cpp",
