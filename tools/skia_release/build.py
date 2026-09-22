@@ -245,7 +245,7 @@ def main():
         'skia_use_gl=true',
         'skia_enable_svg=true',
         'skia_use_expat=true',
-        'extra_cflags+=["-DSK_SUPPORT_GPU=1", "-DSK_GL", "-DSK_DISABLE_LEGACY_SHADERCONTEXT", "-sSUPPORT_LONGJMP=wasm"]',
+        'extra_cflags+=["-DSK_SUPPORT_GPU=1", "-DSK_GL", "-DSK_DISABLE_LEGACY_SHADERCONTEXT", "-sSUPPORT_LONGJMP=wasm", "-Os"]',
         'extra_cflags_cc+=["-std=c++20"]',
     ]
 
