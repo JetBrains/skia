@@ -38,14 +38,11 @@
 
 #if !defined(SK_ENABLE_OPTIMIZE_SIZE)
 #include "src/utils/SkShadowTessellator.h"
-#endif
-
-#if defined(SK_GANESH)
-#include "src/gpu/ganesh/GrStyle.h"
-#include "src/gpu/ganesh/geometry/GrStyledShape.h"
+#include "src/utils/SkShadowPathOps.h"
 #endif
 
 #include <algorithm>
+#include <cstdint>
 #include <cstring>
 #include <functional>
 #include <memory>
@@ -53,8 +50,6 @@
 #include <utility>
 
 using namespace skia_private;
-
-class SkRRect;
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -70,9 +65,11 @@ struct AmbientVerticesFactory {
     SkScalar fOccluderHeight = SK_ScalarNaN;  // NaN so that isCompatible will fail until init'ed.
     bool fTransparent;
     SkVector fOffset;
+    const SkShadowPathOps* fPathOps = nullptr;
 
     bool isCompatible(const AmbientVerticesFactory& that, SkVector* translate) const {
-        if (fOccluderHeight != that.fOccluderHeight || fTransparent != that.fTransparent) {
+        if (fOccluderHeight != that.fOccluderHeight || fTransparent != that.fTransparent ||
+            fPathOps != that.fPathOps) {
             return false;
         }
         *translate = that.fOffset;
@@ -89,7 +86,7 @@ struct AmbientVerticesFactory {
             noTrans[SkMatrix::kMTransY] = 0;
         }
         *translate = fOffset;
-        return SkShadowTessellator::MakeAmbient(path, noTrans, zParams, fTransparent);
+        return SkShadowTessellator::MakeAmbient(path, noTrans, zParams, fTransparent, fPathOps);
     }
 };
 
@@ -115,10 +112,12 @@ struct SpotVerticesFactory {
     SkPoint3 fDevLightPos;
     SkScalar fLightRadius;
     OccluderType fOccluderType;
+    const SkShadowPathOps* fPathOps = nullptr;
 
     bool isCompatible(const SpotVerticesFactory& that, SkVector* translate) const {
         if (fOccluderHeight != that.fOccluderHeight || fDevLightPos.fZ != that.fDevLightPos.fZ ||
-            fLightRadius != that.fLightRadius || fOccluderType != that.fOccluderType) {
+            fLightRadius != that.fLightRadius || fOccluderType != that.fOccluderType ||
+            fPathOps != that.fPathOps) {
             return false;
         }
         switch (fOccluderType) {
@@ -154,11 +153,11 @@ struct SpotVerticesFactory {
         if (directional) {
             translate->set(0, 0);
             return SkShadowTessellator::MakeSpot(path, ctm, zParams, fDevLightPos, fLightRadius,
-                                                 transparent, true);
+                                                 transparent, true, fPathOps);
         } else if (ctm.hasPerspective() || OccluderType::kPointOpaquePartialUmbra == fOccluderType) {
             translate->set(0, 0);
             return SkShadowTessellator::MakeSpot(path, ctm, zParams, fDevLightPos, fLightRadius,
-                                                 transparent, false);
+                                                 transparent, false, fPathOps);
         } else {
             // pick a canonical place to generate shadow, with light centered over path
             SkMatrix noTrans(ctm);
@@ -169,7 +168,8 @@ struct SpotVerticesFactory {
             SkPoint3 centerLightPos = SkPoint3::Make(devCenter.fX, devCenter.fY, fDevLightPos.fZ);
             *translate = fOffset;
             return SkShadowTessellator::MakeSpot(path, noTrans, zParams,
-                                                 centerLightPos, fLightRadius, transparent, false);
+                                                 centerLightPos, fLightRadius, transparent, false,
+                                                 fPathOps);
         }
     }
 };
@@ -346,44 +346,34 @@ bool FindVisitor(const SkResourceCache::Rec& baseRec, void* ctx) {
 
 class ShadowedPath {
 public:
-    ShadowedPath(const SkPath* path, const SkMatrix* viewMatrix)
+    ShadowedPath(const SkPath* path, const SkMatrix* viewMatrix, const SkShadowPathOps* pathOps)
             : fPath(path)
             , fViewMatrix(viewMatrix)
-#if defined(SK_GANESH)
-            , fShapeForKey(*path, GrStyle::SimpleFill())
-#endif
+            , fPathOps(pathOps)
     {}
 
     const SkPath& path() const { return *fPath; }
     const SkMatrix& viewMatrix() const { return *fViewMatrix; }
-#if defined(SK_GANESH)
+
     /** Negative means the vertices should not be cached for this path. */
     int keyBytes() const {
-        return fShapeForKey.hasUnstyledKey() ? fShapeForKey.unstyledKeySize() * sizeof(uint32_t)
-                                             : -1;
+        return fPathOps ? fPathOps->keyBytes(*fPath) : -1;
     }
     void writeKey(void* key) const {
-        fShapeForKey.writeUnstyledKey(reinterpret_cast<uint32_t*>(key));
+        SkASSERT(fPathOps);
+        fPathOps->writeKey(*fPath, key);
     }
-    bool isRRect(SkRRect* rrect) { return fShapeForKey.asRRect(rrect, nullptr); }
-#else
-    int keyBytes() const { return -1; }
-    void writeKey(void* key) const { SK_ABORT("Should never be called"); }
-    bool isRRect(SkRRect* rrect) { return false; }
-#endif
 
 private:
     const SkPath* fPath;
     const SkMatrix* fViewMatrix;
-#if defined(SK_GANESH)
-    GrStyledShape fShapeForKey;
-#endif
+    const SkShadowPathOps* fPathOps;
 };
 
 // This creates a domain of keys in SkResourceCache used by this file.
 static void* kNamespace;
 
-// When the SkPathRef genID changes, invalidate a corresponding GrResource described by key.
+// When the SkPathRef genID changes, invalidate a corresponding SkResourceCache described by key.
 class ShadowInvalidator : public SkIDChangeListener {
 public:
     ShadowInvalidator(const SkResourceCache::Key& key) {
@@ -624,7 +614,8 @@ void SkDevice::drawShadow(SkCanvas* canvas, const SkPath& path, const SkDrawShad
         }
     };
 
-    ShadowedPath shadowedPath(&path, &viewMatrix);
+    const SkShadowPathOps* shadowPathOps = this->shadowPathOps();
+    ShadowedPath shadowedPath(&path, &viewMatrix, shadowPathOps);
 
     bool tiltZPlane = tilted(rec.fZPlaneParams);
     bool transparent = SkToBool(rec.fFlags & SkShadowFlags::kTransparentOccluder_ShadowFlag);
@@ -649,7 +640,8 @@ void SkDevice::drawShadow(SkCanvas* canvas, const SkPath& path, const SkDrawShad
         if (uncached && !useBlur) {
             sk_sp<SkVertices> vertices = SkShadowTessellator::MakeAmbient(path, viewMatrix,
                                                                           zPlaneParams,
-                                                                          transparent);
+                                                                          transparent,
+                                                                          shadowPathOps);
             if (vertices) {
                 SkPaint paint;
                 // Run the vertex color through a GaussianColorFilter and then modulate the
@@ -673,6 +665,7 @@ void SkDevice::drawShadow(SkCanvas* canvas, const SkPath& path, const SkDrawShad
             AmbientVerticesFactory factory;
             factory.fOccluderHeight = zPlaneParams.fZ;
             factory.fTransparent = transparent;
+            factory.fPathOps = shadowPathOps;
             if (viewMatrix.hasPerspective()) {
                 factory.fOffset.set(0, 0);
             } else {
@@ -745,7 +738,8 @@ void SkDevice::drawShadow(SkCanvas* canvas, const SkPath& path, const SkDrawShad
                                                                        zPlaneParams,
                                                                        devLightPos, lightRadius,
                                                                        transparent,
-                                                                       directional);
+                                                                       directional,
+                                                                       shadowPathOps);
             if (vertices) {
                 SkPaint paint;
                 // Run the vertex color through a GaussianColorFilter and then modulate the
@@ -770,6 +764,7 @@ void SkDevice::drawShadow(SkCanvas* canvas, const SkPath& path, const SkDrawShad
             factory.fOccluderHeight = zPlaneParams.fZ;
             factory.fDevLightPos = devLightPos;
             factory.fLightRadius = lightRadius;
+            factory.fPathOps = shadowPathOps;
 
             SkPoint center = SkPoint::Make(path.getBounds().centerX(), path.getBounds().centerY());
             factory.fLocalCenter = center;

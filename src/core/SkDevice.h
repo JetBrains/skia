@@ -49,6 +49,7 @@ class SkPath;
 class SkPixmap;
 class SkRRect;
 class SkRecorder;
+class SkShadowPathOps;
 class SkSurface;
 class SkVertices;
 enum SkColorType : int;
@@ -386,6 +387,7 @@ public:
                               bool skipColorXform = false) = 0;
     virtual void drawMesh(const SkMesh& mesh, sk_sp<SkBlender>, const SkPaint&) = 0;
     virtual void drawShadow(SkCanvas*, const SkPath&, const SkDrawShadowRec&);
+    virtual const SkShadowPathOps* shadowPathOps() const { return nullptr; }
 
     // default implementation calls drawVertices
     virtual void drawPatch(const SkPoint cubics[12], const SkColor colors[4],
