@@ -2222,6 +2222,10 @@ skia_component("skia") {
   defines = []
   libs = []
 
+  if (skia_enable_ganesh && skia_gpu_as_extension) {
+    defines += [ "SK_GANESH" ]
+  }
+
   if (is_win && sanitize == "ASAN") {
     deps += [ "gn/skia:copy_asan_runtime" ]
   }
