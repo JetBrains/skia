@@ -273,6 +273,8 @@ skia_ganesh_private = [
   "$_src/gpu/ganesh/GrSemaphore.h",
   "$_src/gpu/ganesh/GrShaderCaps.cpp",
   "$_src/gpu/ganesh/GrShaderCaps.h",
+  "$_src/gpu/ganesh/GrShadowPathOps.cpp",
+  "$_src/gpu/ganesh/GrShadowPathOps.h",
   "$_src/gpu/ganesh/GrShaderVar.cpp",
   "$_src/gpu/ganesh/GrShaderVar.h",
   "$_src/gpu/ganesh/GrSimpleMesh.h",

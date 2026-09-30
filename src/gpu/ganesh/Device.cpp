@@ -82,6 +82,7 @@
 #include "src/gpu/ganesh/GrRecordingContextPriv.h"
 #include "src/gpu/ganesh/GrRenderTargetProxy.h"
 #include "src/gpu/ganesh/GrShaderCaps.h"
+#include "src/gpu/ganesh/GrShadowPathOps.h"
 #include "src/gpu/ganesh/GrStyle.h"
 #include "src/gpu/ganesh/GrSurfaceProxy.h"
 #include "src/gpu/ganesh/GrSurfaceProxyPriv.h"
@@ -1080,6 +1081,10 @@ void Device::drawMesh(const SkMesh& mesh, sk_sp<SkBlender> blender, const SkPain
 ///////////////////////////////////////////////////////////////////////////////
 
 #if !defined(SK_ENABLE_OPTIMIZE_SIZE)
+const SkShadowPathOps* Device::shadowPathOps() const {
+    return skgpu::ganesh::ShadowPathOps();
+}
+
 void Device::drawShadow(SkCanvas* canvas, const SkPath& path, const SkDrawShadowRec& rec) {
 #if defined(GPU_TEST_UTILS)
     if (fContext->priv().options().fAllPathsVolatile && !path.isVolatile()) {

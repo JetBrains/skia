@@ -94,6 +94,7 @@ skia_utils_private = [
   "$_src/utils/SkShaderUtils.h",
   "$_src/utils/SkShadowTessellator.cpp",
   "$_src/utils/SkShadowTessellator.h",
+  "$_src/utils/SkShadowPathOps.h",
   "$_src/utils/SkShadowUtils.cpp",
   "$_src/utils/SkTextUtils.cpp",
   "$_src/utils/mac/SkCGBase.h",
