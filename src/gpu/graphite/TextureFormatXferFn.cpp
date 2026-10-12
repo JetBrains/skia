@@ -8,6 +8,7 @@
 #include "src/gpu/graphite/TextureFormatXferFn.h"
 
 #include "include/core/SkColorType.h"
+#include "include/core/SkSwizzle.h"
 #include "include/private/SkLog.h"
 #include "src/core/SkAutoMalloc.h"
 #include "src/core/SkColorSpaceXformSteps.h"
@@ -18,7 +19,6 @@
 #include "src/core/SkRasterPipeline.h"
 #include "src/core/SkRasterPipelineOpContexts.h"
 #include "src/core/SkRasterPipelineOpList.h"
-#include "src/core/SkSwizzlePriv.h"
 #include "src/core/SkVx.h"
 
 #include <functional>
@@ -785,10 +785,10 @@ sk_sp<TextureFormatXferFn::RPOps> TextureFormatXferFn::RPOps::Make(
         if ((isOnlyPremul(rpModifiers) && ...)) {
             SkASSERT(srcColorType == dstColorType && !(*xferOps & kForceOpaque));
             if (*xferOps & kSwapRB) {
-                ops->fSwizzler = SkOpts::RGBA_to_bgrA; // swap RB and premultiply
+                ops->fSwizzler = SkPremultiplyAndSwapRB; // swap RB and premultiply
                 *xferOps &= ~kSwapRB;
             } else {
-                ops->fSwizzler = SkOpts::RGBA_to_rgbA; // just premultiply
+                ops->fSwizzler = SkPremultiplyRGBA; // just premultiply
             }
             return ops;
         } // else fall through to use raster pipeline
