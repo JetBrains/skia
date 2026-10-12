@@ -785,10 +785,10 @@ sk_sp<TextureFormatXferFn::RPOps> TextureFormatXferFn::RPOps::Make(
         if ((isOnlyPremul(rpModifiers) && ...)) {
             SkASSERT(srcColorType == dstColorType && !(*xferOps & kForceOpaque));
             if (*xferOps & kSwapRB) {
-                ops->fSwizzler = SkPremultiplyAndSwapRB;
+                ops->fSwizzler = SkPremultiplyAndSwapRB; // swap RB and premultiply
                 *xferOps &= ~kSwapRB;
             } else {
-                ops->fSwizzler = SkPremultiplyRGBA;
+                ops->fSwizzler = SkPremultiplyRGBA; // just premultiply
             }
             return ops;
         } // else fall through to use raster pipeline
