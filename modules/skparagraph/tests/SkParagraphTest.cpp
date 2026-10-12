@@ -2061,6 +2061,111 @@ UNIX_ONLY_TEST(SkParagraph_CenterAlignParagraph, reporter) {
                     paragraph_style.getTextAlign() == impl->paragraphStyle().getTextAlign());
 }
 
+// Letter spacing is added *after* the last glyph too and folded into the line advance. Centred
+// text must centre the glyph ink, not that empty trailing gap. Here we render and check that the
+// painted ink is horizontally centred. (getRectsForRange can't be used: its box includes the gap.)
+UNIX_ONLY_TEST(SkParagraph_CenterAlignLetterSpacing, reporter) {
+    sk_sp<ResourceFontCollection> fontCollection = sk_make_sp<ResourceFontCollection>();
+    SKIP_IF_FONTS_NOT_FOUND(reporter, fontCollection)
+
+    const char* text = "WW";
+    const size_t len = strlen(text);
+    const int width = 400;
+    const int height = 80;
+    const SkScalar letterSpacing = 40;
+
+    ParagraphStyle paragraph_style;
+    paragraph_style.setTextAlign(TextAlign::kCenter);
+    ParagraphBuilderImpl builder(paragraph_style, fontCollection, get_unicode());
+
+    TextStyle text_style;
+    text_style.setFontFamilies({SkString("Roboto")});
+    text_style.setFontSize(40);
+    text_style.setLetterSpacing(letterSpacing);
+    text_style.setColor(SK_ColorBLACK);
+    builder.pushStyle(text_style);
+    builder.addText(text, len);
+    builder.pop();
+
+    auto paragraph = builder.Build();
+    paragraph->layout(width);
+
+    SkBitmap bitmap;
+    bitmap.allocN32Pixels(width, height);
+    bitmap.eraseColor(SK_ColorWHITE);
+    SkCanvas canvas(bitmap);
+    paragraph->paint(&canvas, 0, 0);
+
+    // Horizontal span of painted (dark) pixels = the glyph ink, which excludes the trailing gap.
+    int minInkX = width;
+    int maxInkX = -1;
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            if (SkColorGetR(bitmap.getColor(x, y)) < 128) {
+                minInkX = std::min(minInkX, x);
+                maxInkX = std::max(maxInkX, x);
+            }
+        }
+    }
+    REPORTER_ASSERT(reporter, maxInkX > minInkX);
+
+    // Without the fix the ink is shifted left by letterSpacing / 2 (= 20px here).
+    SkScalar inkCenter = (minInkX + maxInkX) / 2.0f;
+    REPORTER_ASSERT(reporter, SkScalarNearlyEqual(inkCenter, width / 2.0f, 2.0f));
+}
+
+// Letter spacing is a no-op for cursive text, so it must not move centred Arabic. Guards against
+// the trailing-gap trim wrongly firing on cursive runs.
+UNIX_ONLY_TEST(SkParagraph_CenterAlignLetterSpacingRTL, reporter) {
+    sk_sp<ResourceFontCollection> fontCollection = sk_make_sp<ResourceFontCollection>();
+    SKIP_IF_FONTS_NOT_FOUND(reporter, fontCollection)
+
+    // "مرحبا"
+    const char* text = "\xD9\x85\xD8\xB1\xD8\xAD\xD8\xA8\xD8\xA7";
+    const int width = 400;
+    const int height = 120;
+
+    auto inkCenter = [&](SkScalar letterSpacing) -> SkScalar {
+        ParagraphStyle paragraph_style;
+        paragraph_style.setTextAlign(TextAlign::kCenter);
+        paragraph_style.setTextDirection(TextDirection::kRtl);
+        ParagraphBuilderImpl builder(paragraph_style, fontCollection, get_unicode());
+
+        TextStyle text_style;
+        text_style.setFontFamilies({SkString("Noto Naskh Arabic")});
+        text_style.setFontSize(40);
+        text_style.setLetterSpacing(letterSpacing);
+        text_style.setColor(SK_ColorBLACK);
+        builder.pushStyle(text_style);
+        builder.addText(text, strlen(text));
+        builder.pop();
+
+        auto paragraph = builder.Build();
+        paragraph->layout(width);
+
+        SkBitmap bitmap;
+        bitmap.allocN32Pixels(width, height);
+        bitmap.eraseColor(SK_ColorWHITE);
+        SkCanvas canvas(bitmap);
+        paragraph->paint(&canvas, 0, 0);
+
+        int minInkX = width, maxInkX = -1;
+        for (int y = 0; y < height; ++y) {
+            for (int x = 0; x < width; ++x) {
+                if (SkColorGetR(bitmap.getColor(x, y)) < 128) {
+                    minInkX = std::min(minInkX, x);
+                    maxInkX = std::max(maxInkX, x);
+                }
+            }
+        }
+        REPORTER_ASSERT(reporter, maxInkX > minInkX);
+        return (minInkX + maxInkX) / 2.0f;
+    };
+
+    // Letter spacing is a no-op for cursive text, so both must centre at the same place.
+    REPORTER_ASSERT(reporter, SkScalarNearlyEqual(inkCenter(40), inkCenter(0), 1.0f));
+}
+
 UNIX_ONLY_TEST(SkParagraph_JustifyAlignParagraph, reporter) {
     sk_sp<ResourceFontCollection> fontCollection = sk_make_sp<ResourceFontCollection>();
     SKIP_IF_FONTS_NOT_FOUND(reporter, fontCollection)

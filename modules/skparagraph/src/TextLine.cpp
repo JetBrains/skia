@@ -184,6 +184,16 @@ TextLine::TextLine(ParagraphImpl* owner,
             break;
         }
     }
+
+    // Letter spacing is added after every glyph, including the last, so the advance ends with an
+    // empty gap. Drop it so width() is the ink width. Cursive runs get no letter spacing (but still
+    // record it), so skip them.
+    if (fClusterRange.width() > 0) {
+        auto& lastCluster = fOwner->cluster(fClusterRange.end - 1);
+        if (!lastCluster.run().isCursiveScript()) {
+            fAdvance.fX -= lastCluster.getHalfLetterSpacing() * 2;
+        }
+    }
 }
 
 void TextLine::paint(ParagraphPainter* painter, SkScalar x, SkScalar y) {
