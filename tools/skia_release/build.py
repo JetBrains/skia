@@ -79,6 +79,7 @@ def main():
   enable_ganesh = common.enable_ganesh()
   enable_graphite = common.enable_graphite()
   enable_graphite_dawn = common.enable_graphite_dawn()
+  use_icu = common.use_icu()
 
   ninja = ninja_path(host)
   is_ios = target in ('ios', 'iosSim')
@@ -142,7 +143,7 @@ def main():
           '//third_party/externals/icu/filters/common.json',
           '//third_party/icu/skiko_desktop/filter.patch',
       ),
-  }.get(target)
+  }.get(target) if use_icu else None
   if icu_data_config:
     icu_filter, icu_filter_patch = icu_data_config
     args += [
@@ -249,6 +250,22 @@ def main():
         'extra_cflags_cc+=["-std=c++20"]',
     ]
 
+  if not use_icu:
+    # Completely exclude ICU: only the ICU-free `skunicode_core` is built, and the
+    # embedder is expected to provide an SkUnicode implementation itself.
+    # HarfBuzz falls back to its built-in Unicode callbacks.
+    args += [
+        'skia_use_icu=false',
+        'skia_use_client_icu=false',
+        'skia_use_bidi=false',
+        'skia_use_libgrapheme=false',
+        'skia_use_icu4x=false',
+        'skia_use_runtime_icu=false',
+        'skia_use_skunicode_core_only=true',
+        'skia_use_harfbuzz=true',
+        'skia_enable_skparagraph=true',
+    ]
+
   if gpu_as_extension:
     args += ['skia_gpu_as_extension=true']
   if not enable_ganesh:
@@ -258,7 +275,8 @@ def main():
   if enable_graphite_dawn:
     args += ['skia_use_dawn=true']
 
-  out = os.path.join('out', build_type + '-' + target + '-' + machine)
+  out = os.path.join(
+      'out', build_type + '-' + target + '-' + machine + common.out_dir_suffix())
   gn = 'gn.exe' if host == 'windows' else 'gn'
   gn_cmd = [os.path.join('bin', gn), 'gen', out, '--args=' + ' '.join(args)]
   subprocess.check_call(gn_cmd)

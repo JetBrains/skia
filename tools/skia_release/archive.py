@@ -25,14 +25,14 @@ def main():
   target = common.target()
   classifier = common.classifier()
   enable_graphite_dawn = common.enable_graphite_dawn()
-  out_bin = 'out/' + build_type + '-' + target + '-' + machine
+  use_icu = common.use_icu()
+  out_bin = 'out/' + build_type + '-' + target + '-' + machine + common.out_dir_suffix()
 
   globs = [
       out_bin + '/gen/third_party/dawn/include/**/*',
       out_bin + '/*.a',
       out_bin + '/*.a.wasm', # TODO: temporary for m147, in the next release, change it to '.wasm.a'
       out_bin + '/*.lib',
-      out_bin + '/icudtl.dat',
       'include/**/*',
       'modules/particles/include/*.h',
       'modules/skottie/include/*.h',
@@ -64,7 +64,6 @@ def main():
       'third_party/externals/freetype/docs/GPLv2.TXT',
       'third_party/externals/freetype/docs/LICENSE.TXT',
       'third_party/externals/freetype/include/**/*',
-      'third_party/externals/icu/source/common/**/*.h',
       'third_party/externals/libpng/LICENSE',
       'third_party/externals/libpng/*.h',
       'third_party/externals/libwebp/COPYING',
@@ -83,10 +82,14 @@ def main():
       'third_party/externals/zlib/*.h',
       'third_party/icu/*.h',
   ]
+  if use_icu:
+    globs.append(out_bin + '/icudtl.dat')
+    globs.append('third_party/externals/icu/source/common/**/*.h')
   if enable_graphite_dawn:
     globs.append('third_party/externals/dawn/include/**/*')
 
-  dist = 'Skia-' + version + '-' + target + '-' + build_type + '-' + machine + classifier + '.zip'
+  dist = ('Skia-' + version + '-' + target + '-' + build_type + '-' + machine + classifier
+          + ('' if use_icu else '-no-icu') + '.zip')
   print('> Writing', dist)
 
   with zipfile.ZipFile(skia_dir / dist, 'w', compression=zipfile.ZIP_DEFLATED) as zip_file:
