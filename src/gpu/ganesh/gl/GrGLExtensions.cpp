@@ -94,7 +94,7 @@ bool GrGLExtensions::init(GrGLStandard standard,
     } else if (GR_IS_GR_WEBGL(standard)) {
         // WebGL (1.0 or 2.0) doesn't natively support glGetStringi, but enscripten adds it in
         // https://github.com/emscripten-core/emscripten/issues/3472
-        indexed = version >= GR_GL_VER(2, 0);
+        indexed = version >= GR_GL_VER(2, 0) && getStringi && getIntegerv;
     }
 
     if (indexed) {

@@ -803,8 +803,8 @@ config("executable") {
 }
 
 if (is_wasm) {
-  if (is_canvaskit) {
-    # CK manages its flags separately.
+  if (is_canvaskit || skia_wasm_sdk != "") {
+    # CK or wasi-sdk manages its flags separately.
     config("wasm") {
     }
   } else {

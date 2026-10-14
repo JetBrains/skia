@@ -23,6 +23,7 @@ def create_parser(version_required=False):
   parser.add_argument('--ndk')
   parser.add_argument('--skia-dir')
   parser.add_argument('--target')
+  parser.add_argument('--wasi-sdk')
   return parser
 
 
@@ -66,6 +67,12 @@ def target():
   parser = create_parser()
   (args, _) = parser.parse_known_args()
   return args.target if args.target else host()
+
+
+def wasi_sdk():
+  parser = create_parser()
+  (args, _) = parser.parse_known_args()
+  return args.wasi_sdk
 
 
 def version():

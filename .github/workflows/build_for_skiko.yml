@@ -153,6 +153,35 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+  linux-wasm-non-browser:
+    needs: prepare
+    runs-on: ubuntu-latest
+    container: ubuntu:20.04
+    strategy:
+      fail-fast: false
+      matrix:
+        build_type: [Debug, Release]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - run: ./tools/skia_release/prepare_linux_wasm.sh
+      - run: python3 tools/skia_release/check_release.py --skia-dir . --version ${{ needs.prepare.outputs.version }} --target wasm_non_browser --build-type ${{ matrix.build_type }} --machine wasm
+        if: ${{ needs.prepare.outputs.should_release == 'true' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - run: python3 tools/skia_release/build.py --skia-dir . --target wasm_non_browser --machine wasm --build-type ${{ matrix.build_type }} --gpu-as-extension --enable-graphite-dawn --wasi-sdk /opt/wasi-sdk
+      - run: python3 tools/skia_release/archive.py --skia-dir . --version ${{ needs.prepare.outputs.version }} --target wasm_non_browser --machine wasm --build-type ${{ matrix.build_type }} --enable-graphite-dawn
+      - uses: actions/upload-artifact@v4
+        if: ${{ needs.prepare.outputs.should_release == 'true' }}
+        with:
+          name: Skia-${{ needs.prepare.outputs.version }}-wasm_non_browser-${{ matrix.build_type }}-wasm.zip
+          path: '*.zip'
+      - run: python3 tools/skia_release/release.py --skia-dir . --version ${{ needs.prepare.outputs.version }} --target wasm_non_browser --machine wasm --build-type ${{ matrix.build_type }}
+        if: ${{ needs.prepare.outputs.should_release == 'true' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   linux-android:
     needs: prepare
     runs-on: ubuntu-latest
