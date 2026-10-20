@@ -1550,6 +1550,7 @@ PositionWithAffinity TextLine::getGlyphPositionAtCoordinate(SkScalar dx) {
                 const bool paragraphIsLtr =
                         fOwner->paragraphStyle().getTextDirection() == TextDirection::kLtr;
                 const bool runOpposesParagraph =
+                        !context.run->isPlaceholder() &&
                         (context.run->leftToRight() != paragraphIsLtr);
 
                 if (graphemes.size() > 1) {
