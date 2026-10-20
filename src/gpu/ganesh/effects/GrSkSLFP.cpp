@@ -34,6 +34,8 @@
 #include "src/gpu/ganesh/glsl/GrGLSLFragmentShaderBuilder.h"
 #include "src/gpu/ganesh/glsl/GrGLSLUniformHandler.h"
 #include "src/sksl/SkSLString.h"
+#include "src/sksl/SkSLProgramKind.h"
+#include "src/sksl/SkSLProgramSettings.h"
 #include "src/sksl/SkSLUtil.h"
 #include "src/sksl/codegen/SkSLPipelineStageCodeGenerator.h"
 #include "src/sksl/codegen/SkSLRasterPipelineBuilder.h"
@@ -46,6 +48,27 @@
 
 namespace SkSL { class Context; }
 struct GrShaderCaps;
+
+bool GrSkSLFP::isUserDefinedRuntimeEffect() const {
+    switch (fEffect->fBaseProgram->fConfig->fKind) {
+        case SkSL::ProgramKind::kRuntimeColorFilter:
+        case SkSL::ProgramKind::kRuntimeShader:
+        case SkSL::ProgramKind::kRuntimeBlender:
+            return true;
+        case SkSL::ProgramKind::kPrivateRuntimeColorFilter:
+        case SkSL::ProgramKind::kPrivateRuntimeShader:
+        case SkSL::ProgramKind::kPrivateRuntimeBlender:
+        case SkSL::ProgramKind::kVertex:
+        case SkSL::ProgramKind::kFragment:
+        case SkSL::ProgramKind::kCompute:
+        case SkSL::ProgramKind::kGraphiteVertex:
+        case SkSL::ProgramKind::kGraphiteFragment:
+        case SkSL::ProgramKind::kMeshVertex:
+        case SkSL::ProgramKind::kMeshFragment:
+            return false;
+    }
+    SkUNREACHABLE;
+}
 
 class GrSkSLFP::Impl : public ProgramImpl {
 public:

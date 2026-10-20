@@ -24,6 +24,8 @@
 #include "src/gpu/ganesh/d3d/GrD3DRenderTarget.h"
 #include "src/gpu/ganesh/d3d/GrD3DRootSignature.h"
 #include "src/gpu/ganesh/d3d/GrD3DUtil.h"
+#include "src/gpu/ganesh/effects/GrSkSLFP.h"
+#include "src/gpu/ganesh/effects/GrTextureEffect.h"
 #include "src/sksl/SkSLCompiler.h"
 #include "src/sksl/SkSLProgramKind.h"
 #include "src/sksl/SkSLProgramSettings.h"
@@ -525,6 +527,34 @@ gr_cp<ID3D12PipelineState> create_pipeline_state(
 static constexpr SkFourByteTag kHLSL_Tag = SkSetFourByteTag('H', 'L', 'S', 'L');
 static constexpr SkFourByteTag kSKSL_Tag = SkSetFourByteTag('S', 'K', 'S', 'L');
 
+static bool has_user_defined_runtime_effect_fp(const GrFragmentProcessor& fp) {
+    if (fp.classID() == GrProcessor::kGrSkSLFP_ClassID &&
+        fp.cast<GrSkSLFP>().isUserDefinedRuntimeEffect()) {
+        return true;
+    }
+    for (int i = 0; i < fp.numChildProcessors(); ++i) {
+        const GrFragmentProcessor* child = fp.childProcessor(i);
+        if (child && has_user_defined_runtime_effect_fp(*child)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool all_textures_are_unmipmapped(const GrPipeline& pipeline) {
+    if (pipeline.usesDstTexture()) {
+        return false;
+    }
+
+    bool foundTexture = false;
+    bool allUnmipmapped = true;
+    pipeline.visitTextureEffects([&](const GrTextureEffect& effect) {
+        foundTexture = true;
+        allUnmipmapped &= effect.samplerState().mipmapped() == skgpu::Mipmapped::kNo;
+    });
+    return foundTexture && allUnmipmapped;
+}
+
 std::unique_ptr<GrD3DPipelineState> GrD3DPipelineStateBuilder::finalize() {
     TRACE_EVENT0("skia.shaders", TRACE_FUNC);
 
@@ -533,6 +563,19 @@ std::unique_ptr<GrD3DPipelineState> GrD3DPipelineStateBuilder::finalize() {
     SkSL::ProgramSettings settings;
     settings.fSharpenTextures =
         this->gpu()->getContext()->priv().options().fSharpenMipmappedTextures;
+    // FXC tries to unroll loops containing implicit texture sampling. A runtime effect can put
+    // child sampling in a dynamically bounded loop, making shader compilation take seconds.
+    // When all textures have a single mip level, explicit LOD 0 is equivalent to implicit sampling
+    // and keeps implicit gradient instructions out of the generated HLSL.
+    if (all_textures_are_unmipmapped(fProgramInfo.pipeline())) {
+        for (int i = 0; i < fProgramInfo.pipeline().numFragmentProcessors(); ++i) {
+            if (has_user_defined_runtime_effect_fp(
+                        fProgramInfo.pipeline().getFragmentProcessor(i))) {
+                settings.fForceExplicitLODZeroForUnmipmappedTextures = true;
+                break;
+            }
+        }
+    }
     settings.fRTFlipOffset = fUniformHandler.getRTFlipOffset();
     settings.fRTFlipBinding = 0;
     settings.fRTFlipSet = 0;

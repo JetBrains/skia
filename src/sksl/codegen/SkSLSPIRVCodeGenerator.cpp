@@ -2291,11 +2291,13 @@ SpvId SPIRVCodeGenerator::writeSpecialIntrinsic(const FunctionCall& c, SpecialIn
         }
         case kTexture_SpecialIntrinsic: {
             SpvOp_ op = SpvOpImageSampleImplicitLod;
+            SpvOp_ explicitOp = SpvOpImageSampleExplicitLod;
             const Type& arg1Type = arguments[1]->type();
             switch (arguments[0]->type().dimensions()) {
                 case SpvDim1D:
                     if (arg1Type.matches(*fContext.fTypes.fFloat2)) {
                         op = SpvOpImageSampleProjImplicitLod;
+                        explicitOp = SpvOpImageSampleProjExplicitLod;
                     } else {
                         SkASSERT(arg1Type.matches(*fContext.fTypes.fFloat));
                     }
@@ -2303,6 +2305,7 @@ SpvId SPIRVCodeGenerator::writeSpecialIntrinsic(const FunctionCall& c, SpecialIn
                 case SpvDim2D:
                     if (arg1Type.matches(*fContext.fTypes.fFloat3)) {
                         op = SpvOpImageSampleProjImplicitLod;
+                        explicitOp = SpvOpImageSampleProjExplicitLod;
                     } else {
                         SkASSERT(arg1Type.matches(*fContext.fTypes.fFloat2));
                     }
@@ -2310,6 +2313,7 @@ SpvId SPIRVCodeGenerator::writeSpecialIntrinsic(const FunctionCall& c, SpecialIn
                 case SpvDim3D:
                     if (arg1Type.matches(*fContext.fTypes.fFloat4)) {
                         op = SpvOpImageSampleProjImplicitLod;
+                        explicitOp = SpvOpImageSampleProjExplicitLod;
                     } else {
                         SkASSERT(arg1Type.matches(*fContext.fTypes.fFloat3));
                     }
@@ -2329,7 +2333,11 @@ SpvId SPIRVCodeGenerator::writeSpecialIntrinsic(const FunctionCall& c, SpecialIn
             SpvId type = this->getType(callType);
             SpvId sampler = this->writeExpression(*arguments[0], out);
             SpvId uv = this->writeExpression(*arguments[1], out);
-            if (arguments.size() == 3) {
+            if (fProgram.fConfig->fSettings.fForceExplicitLODZeroForUnmipmappedTextures) {
+                SpvId lodZero = this->writeLiteral(0.0, *fContext.fTypes.fFloat);
+                this->writeInstruction(explicitOp, type, result, sampler, uv,
+                                       SpvImageOperandsLodMask, lodZero, out);
+            } else if (arguments.size() == 3) {
                 this->writeInstruction(op, type, result, sampler, uv,
                                        SpvImageOperandsBiasMask,
                                        this->writeExpression(*arguments[2], out),

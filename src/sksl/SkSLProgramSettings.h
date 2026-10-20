@@ -31,6 +31,9 @@ struct ProgramSettings {
     bool fForceHighPrecision = false;
     // if true, add -0.5 bias to LOD of all texture lookups
     bool fSharpenTextures = false;
+    // If true, implicit texture samples use an explicit LOD of zero. Callers may only enable this
+    // when every sampled texture has a single mip level, making explicit LOD zero equivalent.
+    bool fForceExplicitLODZeroForUnmipmappedTextures = false;
     // If true, sk_FragCoord, the dFdy gradient, and sk_Clockwise won't be modified by the
     // rtFlip. Additionally, the program interface's 'fRTFlipUniform' value will be left as None,
     // so no rtFlip uniform will be emitted.

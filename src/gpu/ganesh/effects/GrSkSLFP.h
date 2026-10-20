@@ -184,6 +184,7 @@ public:
     }
 
     const char* name() const override { return fName; }
+    bool isUserDefinedRuntimeEffect() const;
     std::unique_ptr<GrFragmentProcessor> clone() const override;
 
 private:
