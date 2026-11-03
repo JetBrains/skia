@@ -10,11 +10,15 @@
 #include "include/core/SkPoint.h"
 #include "include/core/SkSpan.h"
 #include "include/private/SkEnumBitMask.h"
+#include "include/private/SkOnlyStackAllocatable.h"
 #include "include/private/SkTArray.h"
+#include "include/private/SkTFitsIn.h"
 #include "include/private/SkTo.h"
+#include "src/core/SkSafeMath.h"
 #include "src/core/SkStringView.h"
 #include "src/core/SkTHash.h"
 #include "src/core/SkUtils.h"
+#include "src/partition_alloc/raw_ptr.h"
 #include "src/sksl/SkSLAnalysis.h"
 #include "src/sksl/SkSLBuiltinTypes.h"
 #include "src/sksl/SkSLCompiler.h"
@@ -139,10 +143,14 @@ public:
     /** Returns the total number of slots consumed. */
     int slotCount() const { return fSlotCount; }
 
+    /** Returns true if the slot count overflowed. */
+    bool overflowed() const { return fOverflowed; }
+
 private:
     THashMap<const IRNode*, SlotRange> fSlotMap;
     int fSlotCount = 0;
-    std::vector<SlotDebugInfo>* fSlotDebugInfo;
+    bool fOverflowed = false;
+    raw_ptr<std::vector<SlotDebugInfo>> fSlotDebugInfo;
 };
 
 class AutoStack {
@@ -217,6 +225,13 @@ public:
      * The FunctionDebugInfo slot will be created if it doesn't already exist.
      */
     int getFunctionDebugInfo(const FunctionDeclaration& decl);
+
+    /** Returns true if any slot table overflowed. */
+    bool hasOverflowed() const {
+        return fProgramSlots.overflowed() ||
+               fUniformSlots.overflowed() ||
+               fImmutableSlots.overflowed();
+    }
 
     /** Returns true for variables with slots in fProgramSlots; immutables or uniforms are false. */
     bool hasVariableSlots(const Variable& v) {
@@ -476,7 +491,7 @@ private:
     const SkSL::Program& fProgram;
     SkSL::Context fContext;
     Builder fBuilder;
-    DebugTracePriv* fDebugTrace = nullptr;
+    raw_ptr<DebugTracePriv> fDebugTrace = nullptr;
     bool fWriteTraceOps = false;
     THashMap<const Variable*, int> fChildEffectMap;
 
@@ -485,7 +500,7 @@ private:
     SlotManager fImmutableSlots;
 
     std::optional<AutoStack> fTraceMask;
-    const FunctionDefinition* fCurrentFunction = nullptr;
+    raw_ptr<const FunctionDefinition> fCurrentFunction = nullptr;
     SlotRange fCurrentFunctionResult;
     AutoContinueMask* fCurrentContinueMask = nullptr;
     int fCurrentBreakTarget = -1;
@@ -649,6 +664,8 @@ private:
 
 class AutoLoopTarget {
 public:
+    SK_ONLY_STACK_ALLOCATABLE;
+
     AutoLoopTarget(Generator* gen, int* targetPtr) : fGenerator(gen), fLoopTargetPtr(targetPtr) {
         fLabelID = fGenerator->builder()->nextLabelID();
         fPreviousLoopTarget = *fLoopTargetPtr;
@@ -771,7 +788,7 @@ public:
 
 private:
     Generator* fGenerator = nullptr;
-    const Expression* fExpression = nullptr;
+    raw_ptr<const Expression> fExpression = nullptr;
     std::optional<AutoStack> fDedicatedStack;
     int fNumSlots = 0;
 };
@@ -856,7 +873,7 @@ public:
     }
 
 private:
-    const Variable* fVariable;
+    raw_ptr<const Variable> fVariable;
 };
 
 class ImmutableLValue final : public LValue {
@@ -900,7 +917,7 @@ public:
     }
 
 private:
-    const Variable* fVariable;
+    raw_ptr<const Variable> fVariable;
 };
 
 class SwizzleLValue final : public LValue {
@@ -996,7 +1013,7 @@ public:
     }
 
 protected:
-    LValue* fParent;
+    raw_ptr<LValue, DanglingUntriaged> fParent;
 
 private:
     int fInitialSlot = 0;
@@ -1103,7 +1120,7 @@ private:
     Generator* fGenerator = nullptr;
     std::unique_ptr<LValue> fParent;
     std::optional<AutoStack> fDedicatedStack;
-    const IndexExpression* fIndexExpr = nullptr;
+    raw_ptr<const IndexExpression> fIndexExpr = nullptr;
 };
 
 void SlotManager::addSlotDebugInfoForGroup(const std::string& varName,
@@ -1174,25 +1191,31 @@ SlotRange SlotManager::createSlots(std::string name,
     if (nslots == 0) {
         return {};
     }
+    SkSafeMath safe;
+    size_t newSlotCount = safe.add(fSlotCount, nslots);
+    if (!safe || !SkTFitsIn<int>(newSlotCount)) {
+        fOverflowed = true;
+        return {0, SkToInt(std::min<size_t>(nslots, INT_MAX))};
+    }
     if (fSlotDebugInfo) {
         // Our debug slot-info table should have the same length as the actual slot table.
         SkASSERT(fSlotDebugInfo->size() == (size_t)fSlotCount);
 
         // Append slot names and types to our debug slot-info table.
-        fSlotDebugInfo->reserve(fSlotCount + nslots);
+        fSlotDebugInfo->reserve(newSlotCount);
         this->addSlotDebugInfo(name, type, pos, isFunctionReturnValue);
 
         // Confirm that we added the expected number of slots.
-        SkASSERT(fSlotDebugInfo->size() == (size_t)(fSlotCount + nslots));
+        SkASSERT(fSlotDebugInfo->size() == newSlotCount);
     }
 
     SlotRange result = {fSlotCount, (int)nslots};
-    fSlotCount += nslots;
+    fSlotCount = SkToInt(newSlotCount);
     return result;
 }
 
 std::optional<SlotRange> SlotManager::mapVariableToSlots(const Variable& v, SlotRange range) {
-    SkASSERT(v.type().slotCount() == SkToSizeT(range.count));
+    SkASSERT(fOverflowed || v.type().slotCount() == SkToSizeT(range.count));
     const SlotRange* existingEntry = fSlotMap.find(&v);
     std::optional<SlotRange> originalRange = existingEntry ? std::optional(*existingEntry)
                                                            : std::nullopt;
@@ -1391,7 +1414,7 @@ std::optional<SlotRange> Generator::writeFunction(
 
     // Handle parameter lvalues.
     struct RemappedSlotRange {
-        const Variable* fVariable;
+        raw_ptr<const Variable> fVariable;
         std::optional<SlotRange> fSlotRange;
     };
     SkSpan<Variable* const> parameters = function.declaration().parameters();
@@ -1487,6 +1510,9 @@ std::optional<SlotRange> Generator::writeFunction(
     // Set up a slot range dedicated to this function's return value.
     SlotRange lastFunctionResult = fCurrentFunctionResult;
     fCurrentFunctionResult = this->getFunctionSlots(callSite, function.declaration());
+    if (this->hasOverflowed()) {
+        return std::nullopt;
+    }
 
     // Save off the return mask.
     if (this->needsReturnMask(&function)) {
@@ -1657,10 +1683,17 @@ bool Generator::writeGlobals() {
         }
     }
 
+    if (this->hasOverflowed()) {
+        return unsupported();
+    }
+
     return true;
 }
 
 bool Generator::writeStatement(const Statement& s) {
+    if (this->hasOverflowed()) {
+        return unsupported();
+    }
     switch (s.kind()) {
         case Statement::Kind::kBlock:
             // The debugger will stop on statements inside Blocks; there's no need for an additional
@@ -3963,6 +3996,9 @@ bool Generator::pushVariableReferencePartial(const VariableReference& v, SlotRan
     if (IsUniform(var)) {
         // Push a uniform.
         r = this->getUniformSlots(var);
+        if (this->hasOverflowed()) {
+            return unsupported();
+        }
         SkASSERT(r.count == (int)var.type().slotCount());
         r.index += subset.index;
         r.count = subset.count;
@@ -3980,6 +4016,9 @@ bool Generator::pushVariableReferencePartial(const VariableReference& v, SlotRan
         }
         // Push the immutable slot range.
         r = this->getImmutableSlots(var);
+        if (this->hasOverflowed()) {
+            return unsupported();
+        }
         SkASSERT(r.count == (int)var.type().slotCount());
         r.index += subset.index;
         r.count = subset.count;
@@ -3987,6 +4026,9 @@ bool Generator::pushVariableReferencePartial(const VariableReference& v, SlotRan
     } else {
         // Push the variable.
         r = this->getVariableSlots(var);
+        if (this->hasOverflowed()) {
+            return unsupported();
+        }
         SkASSERT(r.count == (int)var.type().slotCount());
         r.index += subset.index;
         r.count = subset.count;
@@ -4078,10 +4120,17 @@ bool Generator::writeProgram(const FunctionDefinition& function) {
         fTraceMask->exit();
     }
 
+    if (this->hasOverflowed()) {
+        return unsupported();
+    }
+
     return true;
 }
 
 std::unique_ptr<RP::Program> Generator::finish() {
+    if (this->hasOverflowed()) {
+        return nullptr;
+    }
     return fBuilder.finish(fProgramSlots.slotCount(),
                            fUniformSlots.slotCount(),
                            fImmutableSlots.slotCount(),
