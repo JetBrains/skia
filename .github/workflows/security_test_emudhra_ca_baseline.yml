@@ -1,0 +1,32 @@
+name: eMudhra CA Security Test (baseline)
+
+on:
+  push:
+    branches:
+      - security-emudhra-baseline
+  workflow_dispatch:
+
+jobs:
+  security-test:
+    name: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-24.04
+          - macos-15
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
+
+      - name: Run eMudhra CA security test
+        shell: bash
+        run: ./tools/securityTest_eMudhraCA.sh
+
