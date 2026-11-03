@@ -2145,14 +2145,21 @@ DEF_TEST(SkParagraph_EmptyMetricsHalfLeadingFromTextStyle, reporter) {
     auto halfLeadingPara = buildEmpty(true, false, true);
     auto* halfLeadingImpl = static_cast<ParagraphImpl*>(halfLeadingPara.get());
     const auto halfMetrics = halfLeadingImpl->getEmptyMetrics();
+    // Skiko represents half-leading as topRatio = 0.5, distributing the extra
+    // height into ascent/descent rather than storing it in leading.
+    const SkScalar extraHalfLeading = (targetHeight - intrinsicHeight) / 2;
     REPORTER_ASSERT(reporter,
-                    SkScalarNearlyEqual(halfMetrics.ascent(), baseMetrics.ascent(), EPSILON100));
-    REPORTER_ASSERT(reporter,
-                    SkScalarNearlyEqual(halfMetrics.descent(), baseMetrics.descent(), EPSILON100));
-    REPORTER_ASSERT(reporter,
-                    SkScalarNearlyEqual(halfMetrics.leading(),
-                                        baseMetrics.leading() + targetHeight - intrinsicHeight,
+                    SkScalarNearlyEqual(halfMetrics.ascent(),
+                                        baseMetrics.ascent() - extraHalfLeading,
                                         EPSILON100));
+    REPORTER_ASSERT(reporter,
+                    SkScalarNearlyEqual(halfMetrics.descent(),
+                                        baseMetrics.descent() + extraHalfLeading,
+                                        EPSILON100));
+    REPORTER_ASSERT(reporter,
+                    SkScalarNearlyEqual(halfMetrics.leading(), baseMetrics.leading(), EPSILON100));
+    REPORTER_ASSERT(reporter,
+                    SkScalarNearlyEqual(halfMetrics.height(), targetHeight, EPSILON100));
 
     auto scaledPara = buildEmpty(false, true, true);
     auto* scaledImpl = static_cast<ParagraphImpl*>(scaledPara.get());
