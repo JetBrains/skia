@@ -81,9 +81,8 @@ void Run::calculateMetrics() {
         }
     }
 
-    // If we shift the baseline we need to make sure the shifted text fits the line
-    fCorrectAscent += fBaselineShift;
-    fCorrectDescent += fBaselineShift;
+    // fCorrectAscent and fCorrectDescent stay unshifted; correctAscent() and correctDescent()
+    // apply fBaselineShift on read
 }
 
 SkShaper::RunHandler::Buffer Run::newRunBuffer() {
