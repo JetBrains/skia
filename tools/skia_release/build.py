@@ -197,6 +197,8 @@ def main():
         'skia_use_direct3d=true',
         'extra_cflags+=["-DSK_FONT_HOST_USE_SYSTEM_SETTINGS"]',
     ]
+    if machine == 'arm64':
+      args += ['skia_use_partition_alloc=false']
     if host == 'windows':
       clang_path = shutil.which('clang-cl.exe')
       if not clang_path:
