@@ -12,6 +12,7 @@
 #include "include/gpu/ganesh/GrTypes.h"
 #include "include/private/SingleOwner.h"
 #include "include/private/SkNoncopyable.h"
+#include "include/private/SkOnlyStackAllocatable.h"
 #include "include/private/SkTo.h"
 #include "src/core/SkMathPriv.h"
 #include "src/core/SkMessageBus.h"
@@ -56,6 +57,8 @@ static skgpu::Budgeted resource_budgeted(const GrGpuResource* resource) {
 
 class GrResourceCache::AutoValidate : ::SkNoncopyable {
 public:
+    SK_ONLY_STACK_ALLOCATABLE;
+
     AutoValidate(GrResourceCache* cache) : fCache(cache) { cache->validate(); }
     ~AutoValidate() { fCache->validate(); }
 private:
@@ -295,8 +298,14 @@ void GrResourceCache::changeUniqueKey(GrGpuResource* resource, const skgpu::Uniq
                 old->resourcePriv().isPurgeable()) {
                 old->cacheAccess().release();
             } else {
-                // removeUniqueKey expects an external owner of the resource.
-                this->removeUniqueKey(sk_ref_sp(old).get());
+                // GrResourceCache::removeUniqueKey() expects a non-zero refcount, we refcount with
+                // GrResourceCache::refResource() instead of sk_ref_sp since the first ref of a
+                // resource must be by the resource cache. In the case that this is the first ref
+                // on the resource, refResource() also transfers the resource to the unpurgeable
+                // queue, which is required as unref() expects the resource to be there.
+                this->refResource(old);
+                this->removeUniqueKey(old);
+                old->unref();
             }
         }
         SkASSERT(nullptr == fUniqueHash.find(newKey));
@@ -813,6 +822,8 @@ void GrResourceCache::validate() const {
     }
 
     struct Stats {
+        SK_ONLY_STACK_ALLOCATABLE;
+
         size_t fBytes;
         int fBudgetedCount;
         size_t fBudgetedBytes;

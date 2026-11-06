@@ -2,6 +2,7 @@
 
 #include "modules/skparagraph/include/DartTypes.h"
 #include "modules/skparagraph/include/ParagraphStyle.h"
+#include "modules/skunicode/include/SkUnicode.h"
 #include "src/core/SkStringUtils.h"
 #include "src/core/SkUTF.h"
 
@@ -37,7 +38,8 @@ bool ParagraphStyle::almostEquals(const ParagraphStyle& rhs) const {
            this->fReplaceTabCharacters == rhs.fReplaceTabCharacters &&
            this->fFakeMissingFontStyles == rhs.fFakeMissingFontStyles &&
            this->fApplyRoundingHack == rhs.fApplyRoundingHack &&
-           this->fRenderSoftHyphens == rhs.fRenderSoftHyphens;
+           this->fRenderSoftHyphens == rhs.fRenderSoftHyphens &&
+           this->fSoftHyphenString == rhs.fSoftHyphenString;
 }
 
 bool ParagraphStyle::equals(const ParagraphStyle& rhs) const {
@@ -48,8 +50,7 @@ bool ParagraphStyle::equals(const ParagraphStyle& rhs) const {
 
 bool ParagraphStyle::equalsByLayout(const ParagraphStyle& rhs) const {
     return this->almostEquals(rhs) &&
-           this->fDefaultTextStyle.equalsByFonts(rhs.fDefaultTextStyle) &&
-           nearlyEqual(fHeight, rhs.fHeight);
+           this->fDefaultTextStyle.equalsByFonts(rhs.fDefaultTextStyle);
 }
 
 ParagraphStyle::ParagraphStyle() {
@@ -61,6 +62,10 @@ ParagraphStyle::ParagraphStyle() {
     fHintingIsOn = true;
     fReplaceTabCharacters = false;
     fFakeMissingFontStyles = true;
+}
+
+void ParagraphStyle::setSoftHyphenString(const std::u16string& value) {
+    fSoftHyphenString = SkUnicode::convertUtf16ToUtf8(value);
 }
 
 TextAlign ParagraphStyle::effective_align() const {
