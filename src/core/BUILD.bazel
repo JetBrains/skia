@@ -75,8 +75,6 @@ SEMI_PUBLIC_HEADERS = [
     "SkBlurMask.h",
     "SkBlurMaskFilterImpl.h",
     "SkBuffer.h",
-    "SkCPUContextImpl.h",
-    "SkCPURecorderImpl.h",
     "SkCachedData.h",
     "SkCanvasPriv.h",
     "SkChecksum.h",
@@ -88,6 +86,7 @@ SEMI_PUBLIC_HEADERS = [
     "SkColorSpacePriv.h",
     "SkColorSpaceXformSteps.h",
     "SkCompressedDataUtils.h",
+    "SkContextPriv.h",
     "SkConvertPixels.h",
     "SkCpu.h",
     "SkCubics.h",
@@ -103,6 +102,7 @@ SEMI_PUBLIC_HEADERS = [
     "SkEffectPriv.h",
     "SkEndian.h",
     "SkEnumerate.h",
+    "SkExecutors.h",
     "SkFDot6.h",
     "SkFixedArray.h",
     "SkFloatBits.h",
@@ -177,10 +177,12 @@ SEMI_PUBLIC_HEADERS = [
     "SkRuntimeEffectPriv.h",
     "SkSLTypeShared.h",
     "SkSafeMath.h",
+    "SkSafetyChecks.h",
     "SkSamplingPriv.h",
     "SkScalerContext.h",
     "SkScan.h",
     "SkScopeExit.h",
+    "SkSharedContext.h",
     "SkSharedMutex.h",
     "SkSpanPriv.h",
     "SkSpecialImage.h",
@@ -248,7 +250,6 @@ PRIVATE_HEADERS = [
     "SkAlphaRuns.h",
     "SkAnalyticEdge.h",
     "SkAutoBlitterChoose.h",
-    "SkBigPicture.h",
     "SkBlitMask.h",
     "SkBlitRow.h",
     "SkBlitter.h",
@@ -294,6 +295,8 @@ skia_filegroup(
     name = "core_srcs",
     srcs = [
         # Implementation of public and private headers
+        "RasterContext.cpp",
+        "Recorder.cpp",
         "SkAAClip.cpp",
         "SkATrace.cpp",
         "SkAlphaRuns.cpp",
@@ -304,7 +307,6 @@ skia_filegroup(
         "SkBBHFactory.cpp",
         "SkBase64.cpp",
         "SkBezierCurves.cpp",
-        "SkBigPicture.cpp",
         "SkBitmap.cpp",
         "SkBitmapCache.cpp",
         "SkBitmapDevice.cpp",
@@ -330,8 +332,6 @@ skia_filegroup(
         "SkBlurMask.cpp",
         "SkBlurMaskFilterImpl.cpp",
         "SkBuffer.cpp",
-        "SkCPUContext.cpp",
-        "SkCPURecorder.cpp",
         "SkCachedData.cpp",
         "SkCanvas.cpp",
         "SkCanvasPriv.cpp",
@@ -347,6 +347,7 @@ skia_filegroup(
         "SkColorTable.cpp",
         "SkCompressedDataUtils.cpp",
         "SkContainers.cpp",
+        "SkContext.cpp",
         "SkContourMeasure.cpp",
         "SkConvertPixels.cpp",
         "SkCpu.cpp",
@@ -371,6 +372,7 @@ skia_filegroup(
         "SkEdgeBuilder.cpp",
         "SkEdgeClipper.cpp",
         "SkExecutor.cpp",
+        "SkExecutors.cpp",
         "SkFlattenable.cpp",
         "SkFloatingPoint.cpp",
         "SkFont.cpp",
@@ -465,6 +467,7 @@ skia_filegroup(
         "SkRecordOpts.cpp",
         "SkRecordedDrawable.cpp",
         "SkRecordCanvas.cpp",
+        "SkRecorder.cpp",
         "SkRecords.cpp",
         "SkRect.cpp",
         "SkRegion.cpp",
@@ -483,6 +486,7 @@ skia_filegroup(
         "SkScan_Hairline.cpp",
         "SkScan_Path.cpp",
         "SkSemaphore.cpp",
+        "SkSharedContext.cpp",
         "SkSharedMutex.cpp",
         "SkSpecialImage.cpp",
         "SkSpinlock.cpp",
@@ -560,6 +564,11 @@ bool_flag(
     default = False,
 )
 
+bool_flag(
+    name = "skia_enable_threadlocal_strikecache",
+    default = False,
+)
+
 skia_cc_library(
     name = "core",
     srcs = [
@@ -583,11 +592,18 @@ skia_cc_library(
     hdrs = [
         "//include/codec:core_hdrs",
         "//include/core:core_hdrs",
+        "//include/cpu:core_hdrs",
         "//include/effects:core_hdrs",
         "//include/private:private_hdrs",
         "//include/sksl:core_hdrs",
         "//include/utils:core_hdrs",
     ],
+    defines = [
+        "SK_ENABLE_YUVA_PACKED_422",
+    ] + select({
+        ":skia_enable_threadlocal_strikecache_true": ["SK_ENABLE_THREADLOCAL_STRIKECACHE"],
+        ":skia_enable_threadlocal_strikecache_false": [],
+    }),
     features = ["layering_check"],
     textual_hdrs = [
         "//src/opts:textual_hdrs",
@@ -627,6 +643,7 @@ skia_cc_library(
     deps = [
         ":core",
         "//modules/skcms",
+        "//src/partition_alloc:raw_ptr",
     ],
 )
 

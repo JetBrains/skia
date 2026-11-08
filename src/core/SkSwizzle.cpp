@@ -12,3 +12,11 @@
 void SkSwapRB(uint32_t* dest, const uint32_t* src, int count) {
     SkOpts::RGBA_to_BGRA(dest, src, count);
 }
+
+void SkPremultiplyRGBA(uint32_t* dest, const uint32_t* src, int count) {
+    SkOpts::RGBA_to_rgbA(dest, src, count);
+}
+
+void SkPremultiplyAndSwapRB(uint32_t* dest, const uint32_t* src, int count) {
+    SkOpts::RGBA_to_bgrA(dest, src, count);
+}

@@ -10,6 +10,7 @@
 
 #include "include/core/SkSpan.h"
 #include "include/core/SkTypes.h"
+#include "include/private/SkAttributes.h"
 #include "include/private/SkMacros.h"
 #include "include/private/SkTArray.h"
 #include "src/core/SkChecksum.h"
@@ -19,16 +20,36 @@
 #include <cstring> // for memcmp
 
 class SkArenaAlloc;
+class SkMeshSpecification;
 struct SkSamplingOptions;
 enum class SkTileMode;
 
 namespace skgpu::graphite {
 
 class Caps;
+class RuntimeEffectDictionary;
 class ShaderCodeDictionary;
 class ShaderNode;
 class TextureProxy;
 class UniquePaintParamsID;
+
+enum class RootBlockType : int32_t {
+    kSrcColor = -1,
+    kFinalBlend = -2,
+    kClip = -3,
+    kMeshShader = -4,
+};
+
+struct RootNodesInfo {
+    const ShaderNode* fSrcColor = nullptr;
+    const ShaderNode* fFinalBlend = nullptr;
+    const ShaderNode* fClip = nullptr;
+    const ShaderNode* fMeshShader = nullptr;
+
+    const SkMeshSpecification* fMeshSpec = nullptr;
+
+    SkSpan<const ShaderNode*> fRoots;
+};
 
 /**
  * This class is a compact representation of the shader needed to implement a given
@@ -51,11 +72,18 @@ class UniquePaintParamsID;
  * embedded data. Skipping (-v + 1) entries returns iteration to indices containing snippet IDs.
  *
  * The PaintParamsKey stores multiple root nodes, with each root representing an effect tree that
- * affects different parts of the shading pipeline. The key is can only hold 2 or 3 roots:
+ * affects different parts of the shading pipeline. The key is can only hold 2-4 roots:
  *  1. Color root node: produces the "src" color used in final blending with the "dst" color.
  *  2. Final blend node: defines the blend function combining src and dst colors. If this is a
  *     FixedBlend snippet the final pipeline may be able to lift it to HW blending.
  *  3. Clipping: optional, produces analytic coverage from a clip shader or shape.
+ *  4. Mesh shader: optional, defines the SkMeshSpecification used for the current paint, only
+ *     expected to be defined for drawMesh calls.
+ *
+ * Each root node within the key is also preceded by a 4 byte header with a value < 0 defining
+ * the type of the node as one of the 3 types listed above. Writers of the PaintParamsKey should
+ * still add the root blocks in a consistent order since that impacts the key hash/comparison
+ * even though technically the generated shaders wouldn't be impacted since they would be the same.
  *
  * Logically the root effects produce a src color and the src coverage (augmenting any other
  * coverage coming from the RenderStep). A single src shading node could be used instead of the
@@ -97,10 +125,12 @@ public:
     //
     // Before returning the ShaderNode trees, this method decides which ShaderNode expressions to
     // lift to the vertex shader, depending on how many varyings are available.
-    SkSpan<const ShaderNode*> getRootNodes(const Caps*,
-                                           const ShaderCodeDictionary*,
-                                           SkArenaAlloc*,
-                                           int availableVaryings) const;
+    RootNodesInfo getRootNodes(const Caps*,
+                               const ShaderCodeDictionary*,
+                               const RuntimeEffectDictionary*,
+                               SkArenaAlloc*,
+                               int availableVaryings,
+                               bool canLiftCoords) const;
 
     // Converts the key to a structured list of snippet information for debugging or labeling
     // purposes.
@@ -112,7 +142,7 @@ public:
 
     bool operator==(const PaintParamsKey& that) const {
         return fData.size() == that.fData.size() &&
-               !memcmp(fData.data(), that.fData.data(), fData.size());
+               SK_UNSAFE_TODO(!memcmp(fData.data(), that.fData.data(), fData.size()));
     }
     bool operator!=(const PaintParamsKey& that) const { return !(*this == that); }
 
@@ -180,6 +210,11 @@ public:
         return PaintParamsKey(fData) == that;
     }
     bool operator!=(const PaintParamsKey& that) const { return !(*this == that); }
+
+    void addRootBlockHeader(RootBlockType type) {
+        SkASSERT(!fLocked);
+        fData.push_back(static_cast<int32_t>(type));
+    }
 
     void beginBlock(BuiltInCodeSnippetID id) { this->beginBlock(static_cast<uint32_t>(id)); }
     void beginBlock(uint32_t codeSnippetID) {

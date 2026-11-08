@@ -21,13 +21,16 @@ class Sampler;
 */
 enum class DescriptorType : uint8_t {
     kUniformBuffer = 0,
+    kUniformBufferDynamic,
     kTextureSampler,
     kTexture,
     kCombinedTextureSampler,
     kStorageBuffer,
+    kStorageBufferDynamic,
     kInputAttachment,
+    kStorageTexture,
 
-    kLast = kInputAttachment,
+    kLast = kStorageTexture,
 };
 static constexpr int kDescriptorTypeCount = (int)(DescriptorType::kLast) + 1;
 
@@ -37,6 +40,11 @@ enum class PipelineStageFlags : uint8_t {
     kCompute = 0b100,
 };
 SK_MAKE_BITMASK_OPS(PipelineStageFlags)
+
+static_assert((PipelineStageFlags::kVertexShader |
+               PipelineStageFlags::kFragmentShader |
+               PipelineStageFlags::kCompute).value() < 16,
+              "PipelineStageFlags bitmask exceeds 4 bits allocated in descriptor set key");
 
 struct DescriptorData {
     DescriptorData(DescriptorType type,

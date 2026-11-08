@@ -69,13 +69,14 @@ sk_sp<DrawContext> get_precompile_draw_context(const skgpu::graphite::Caps* caps
                                                     resourceProvider,
                                                     drawSize,
                                                     texInfo,
-                                                    "PrecompileTarget",
-                                                    skgpu::Budgeted::kYes);
+                                                    skgpu::Budgeted::kYes,
+                                                    "PrecompileTarget");
     return DrawContext::Make(caps,
                              std::move(target),
                              drawSize,
                              colorInfo,
-                             {});
+                             {},
+                             /*allowUnpremul=*/false);
 }
 
 void log_run(const char* label,
@@ -306,7 +307,6 @@ void extract_vs_build_subtest(skiatest::Reporter* reporter,
         precompileKeyContext.paintParamsKeyBuilder()->resetForDraw();
         KeyContext keyContext(recorder,
                               drawContext,
-                              precompileKeyContext.storageBufferManager(),
                               precompileKeyContext.paintParamsKeyBuilder(),
                               &paramsGatherer,
                               {},
@@ -439,6 +439,10 @@ void precompile_vs_real_draws_subtest(skiatest::Reporter* reporter,
                    {{ { kDepth_1.fDSFlags, kRGBA_8888_SkColorType, kDepth_1.fDstCS,
                        kDepth_1.fRequiresMSAA } }});
     }
+
+    // We need to explicitly wait for the precompilation to finish here
+    context->priv().sharedContext()->pipelineManager()->wait_TestOnly();
+
     int after = globalCache->numGraphicsPipelines();
 
     REPORTER_ASSERT(reporter, before == 0);
@@ -514,13 +518,11 @@ DEF_CONDITIONAL_GRAPHITE_TEST_FOR_ALL_CONTEXTS(PaintParamsKeyTestReduced,
     // Currently, we just use this as a valid parameter for keyContext (will hit asserts otherwise)
     sk_sp<DrawContext> precompileDrawContext = get_precompile_draw_context(caps, context);
 
-    StorageBufferManager storageBufferManager;
     ShaderCodeDictionary* dict = context->priv().shaderCodeDictionary();
     PaintParamsKeyBuilder builder(dict);
     PipelineDataGatherer gatherer(Layout::kMetal);
     sk_sp<RuntimeEffectDictionary> rtDict = sk_make_sp<RuntimeEffectDictionary>();
     KeyContext keyContext(caps,
-                          &storageBufferManager,
                           &builder,
                           &gatherer,
                           dict,
@@ -605,13 +607,11 @@ DEF_CONDITIONAL_GRAPHITE_TEST_FOR_ALL_CONTEXTS(PaintParamsKeyTest,
     // Currently, we just use this as a valid parameter for keyContext (will hit asserts otherwise)
     sk_sp<DrawContext> precompileDrawContext = get_precompile_draw_context(caps, context);
 
-    StorageBufferManager storageBufferManager;
     ShaderCodeDictionary* dict = context->priv().shaderCodeDictionary();
     PaintParamsKeyBuilder builder(dict);
     PipelineDataGatherer gatherer(Layout::kMetal);
     sk_sp<RuntimeEffectDictionary> rtDict = sk_make_sp<RuntimeEffectDictionary>();
     KeyContext precompileKeyContext(caps,
-                                    &storageBufferManager,
                                     &builder,
                                     &gatherer,
                                     dict,

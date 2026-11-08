@@ -366,11 +366,14 @@ static void write_vertex_buffer(VertexWriter writer) {
 AnalyticRRectRenderStep::AnalyticRRectRenderStep(Layout layout, StaticBufferManager* bufferManager)
         : RenderStep(layout,
                      RenderStepID::kAnalyticRRect,
-                     Flags::kPerformsShading | Flags::kEmitsCoverage | Flags::kOutsetBoundsForAA |
-                     Flags::kUseNonAAInnerFill | Flags::kAppendInstances,
+                     Flags::kPerformsShading | Flags::kEmitsCoverage
+                                             | Flags::kOutsetBoundsForAA
+                                             | Flags::kUseNonAAInnerFill
+                                             | Flags::kNoSelfIntersections
+                                             | Flags::kAppendInstances,
                      /*uniforms=*/{},
                      PrimitiveType::kTriangleStrip,
-                     kDirectDepthLessPass,
+                     /*stencilSettings=*/{},
                      /*staticAttrs=*/{{
                              {"cornerID", VertexAttribType::kUInt, SkSLType::kUInt},
                              {"position", VertexAttribType::kFloat2, SkSLType::kFloat2},
@@ -402,6 +405,7 @@ AnalyticRRectRenderStep::AnalyticRRectRenderStep(Layout layout, StaticBufferMana
                              {"mat1", VertexAttribType::kFloat3, SkSLType::kFloat3},
                              {"mat2", VertexAttribType::kFloat3, SkSLType::kFloat3}
                      }},
+                     /*storageUniforms=*/{},
                      /*varyings=*/{{
                              // TODO: If the inverse transform is part of the draw's SSBO, we can
                              // reconstruct the Jacobian in the fragment shader using the existing
@@ -412,12 +416,21 @@ AnalyticRRectRenderStep::AnalyticRRectRenderStep(Layout layout, StaticBufferMana
                              {"edgeDistances", SkSLType::kFloat4}, // distance to LTRB edges
                              // TODO: These are constant for all fragments for a given instance,
                              // could we store them in the draw's SSBO?
+#ifdef SK_DISABLE_GRAPHITE_NONINTEGRAL_VARYINGS_FLAT_INTERPOLATION
                              {"xRadii", SkSLType::kFloat4},
                              {"yRadii", SkSLType::kFloat4},
+#else
+                             {"xRadii", SkSLType::kFloat4, Interpolation::kFlat},
+                             {"yRadii", SkSLType::kFloat4, Interpolation::kFlat},
+#endif
                              // Matches the StrokeStyle struct (X is radius, Y < 0 is round join,
                              // Y = 0 is bevel, Y > 0 is miter join).
                              // TODO: These could easily be considered part of the draw's uniforms.
+#ifdef SK_DISABLE_GRAPHITE_NONINTEGRAL_VARYINGS_FLAT_INTERPOLATION
                              {"strokeParams", SkSLType::kFloat2},
+#else
+                             {"strokeParams", SkSLType::kFloat2, Interpolation::kFlat},
+#endif
                              // 'perPixelControl' is a tightly packed description of how to
                              // evaluate the possible edges that influence coverage in a pixel.
                              // The decision points and encoded values are spread across X and Y
@@ -457,7 +470,7 @@ AnalyticRRectRenderStep::AnalyticRRectRenderStep(Layout layout, StaticBufferMana
 
 AnalyticRRectRenderStep::~AnalyticRRectRenderStep() {}
 
-std::string AnalyticRRectRenderStep::vertexSkSL() const {
+std::string AnalyticRRectRenderStep::vertexSkSL(const RootNodesInfo&) const {
     // Returns the body of a vertex function, which must define a float4 devPosition variable and
     // must write to an already-defined float2 stepLocalCoords variable.
     return "float4 devPosition = analytic_rrect_vertex_fn("
@@ -485,6 +498,7 @@ const char* AnalyticRRectRenderStep::fragmentCoverageSkSL() const {
 }
 
 void AnalyticRRectRenderStep::writeVertices(DrawWriter* writer,
+                                            StorageContext* /*storageContext*/,
                                             const DrawParams& params,
                                             uint32_t ssboIndex) const {
     SkASSERT(params.geometry().isShape() || params.geometry().isEdgeAAQuad());

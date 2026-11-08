@@ -69,7 +69,10 @@ void MtlCaps::initGPUFamily(id<MTLDevice> device) {
 
 void MtlCaps::initCaps(const id<MTLDevice> device) {
 #if defined(GPU_TEST_UTILS)
-    this->setDeviceName([[device name] UTF8String]);
+    const char* name = [[device name] UTF8String];
+    if (name) {
+        this->setDeviceName(name);
+    }
 #endif
 
     if (this->isMac() || fGPUFamily >= MTLGPUFamilyApple3) {
@@ -107,7 +110,7 @@ void MtlCaps::initCaps(const id<MTLDevice> device) {
     fResourceBindingReqs.fIntrinsicBufferBinding =
             MtlGraphicsPipeline::kIntrinsicUniformBufferIndex;
     fResourceBindingReqs.fCombinedUniformBufferBinding = MtlGraphicsPipeline::kCombinedUniformIndex;
-    fResourceBindingReqs.fGradientBufferBinding = MtlGraphicsPipeline::kGradientBufferIndex;
+    fResourceBindingReqs.fStorageBufferBinding = MtlGraphicsPipeline::kStorageBufferIndex;
 
     // Metal does not distinguish between uniform and storage buffers.
     fRequiredStorageBufferAlignment = fRequiredUniformBufferAlignment;
@@ -124,11 +127,7 @@ void MtlCaps::initCaps(const id<MTLDevice> device) {
         fMaxVaryings = 15;
     }
 
-    if (@available(macOS 10.12, iOS 14.0, tvOS 14.0, *)) {
-        fClampToBorderSupport = (this->isMac() || fGPUFamily >= MTLGPUFamilyApple7);
-    } else {
-        fClampToBorderSupport = false;
-    }
+    fClampToBorderSupport = (this->isMac() || fGPUFamily >= MTLGPUFamilyApple7);
 
     const bool isIntel = [device.name containsString:@"Intel"];
     if (isIntel) {
@@ -185,6 +184,13 @@ void MtlCaps::initFormatTable(const id<MTLDevice> device) {
         // Convert from the Metal format feature flags to Graphite's TextureUsage.
         SkASSERT(format != MTLPixelFormatInvalid);
 
+        // Per "Texture capabilities by pixel format" in
+        // https://developer.apple.com/metal/Metal-Feature-Set-Tables.pdf:
+        // All graphics and compute kernels can read or sample a texture with any available pixel
+        // format (i.e. nearest filtering, texel reads), so by this point, we can claim that the
+        // read usage must be supported. Note, linear filtering requires the filter feature flag.
+        supportedUsage |= TextureUsage::kRead;
+
         // Every available pixel format can be used as a copy src and dst in Metal.
         // Graphite chooses to exclude kCopySrc on compressed formats
         if (TextureFormatCompressionType(tf) != SkTextureCompressionType::kNone) {
@@ -194,7 +200,6 @@ void MtlCaps::initFormatTable(const id<MTLDevice> device) {
             supportedUsage |= TextureUsage::kCopySrc | TextureUsage::kCopyDst;
         }
 
-        // Graphite assumes you can filter in a shader (not just read texels)
         if (features & MTLFeatureFlag::Filter) {
             supportedUsage |= TextureUsage::kSample;
         }
@@ -241,8 +246,9 @@ std::pair<SkEnumBitMask<TextureUsage>, Tiling> MtlCaps::getTextureUsage(
     // Other than rendering, every other usage is blocked if it's framebuffer-only
     if (!mtlInfo.fFramebufferOnly) {
         if (mtlInfo.fUsage & MTLTextureUsageShaderRead) {
-            usage |= TextureUsage::kSample;
-
+            // If UsageShaderRead is present, we always add the Read and Sample usages, and rely on
+            // the format's supported flags to mask to the correct capabilities.
+            usage |= TextureUsage::kRead | TextureUsage::kSample;
             if (mtlInfo.fUsage & MTLTextureUsageShaderWrite) {
                 usage |= TextureUsage::kStorage;
             }
@@ -271,7 +277,7 @@ TextureInfo MtlCaps::onGetDefaultTextureInfo(SkEnumBitMask<TextureUsage> usage,
     MTLStorageMode storageMode = MTLStorageModePrivate;
     MTLTextureUsage mtlUsage = MTLTextureUsageUnknown;
 
-    if (usage & TextureUsage::kSample) {
+    if (usage & (TextureUsage::kSample | TextureUsage::kRead)) {
         mtlUsage |= MTLTextureUsageShaderRead;
     }
     if (usage & TextureUsage::kStorage) {

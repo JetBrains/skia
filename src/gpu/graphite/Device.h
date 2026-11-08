@@ -84,6 +84,10 @@ class Task;
 class TextureProxy;
 class TextureProxyView;
 
+#if defined(SK_ENABLE_SPARSE_STRIPS)
+class StripGenerator;
+#endif
+
 class Device final : public SkDevice {
 public:
     ~Device() override;
@@ -97,7 +101,8 @@ public:
                               const SkColorInfo&,
                               const SkSurfaceProps&,
                               LoadOp initialLoadOp,
-                              bool registerWithRecorder=true);
+                              bool registerWithRecorder=true,
+                              bool allowUnpremul=false);
     // Convenience factory to create the underlying TextureProxy based on the configuration provided
     static sk_sp<Device> Make(Recorder*,
                               const SkImageInfo&,
@@ -107,7 +112,8 @@ public:
                               const SkSurfaceProps&,
                               LoadOp initialLoadOp,
                               std::string_view label,
-                              bool registerWithRecorder=true);
+                              bool registerWithRecorder=true,
+                              bool allowUnpremul=false);
 
     Device* asGraphiteDevice() override { return this; }
 
@@ -138,6 +144,11 @@ public:
     // May not be texturable, but includes the swizzle required when sampling or reading to CPU
     const TextureProxyView& target() const;
     bool isTexturable() const;
+
+    // TODO (b/540923063): Remove this once flushPendingWork has been moved prior to key extraction.
+    // After that, gradient data inserted into the storage context will no longer be invalidated
+    // a flush. Then the DC can call resetStorageCache itself naturally inside flushPendingWork.
+    void resetStorageCache();
 
     // Can succeed if target is readable but not sampleable. Assumes 'subset' is contained in bounds
     sk_sp<Image> makeImageCopy(const SkIRect& subset, Budgeted, Mipmapped, SkBackingFit);
@@ -241,7 +252,7 @@ public:
                    sk_sp<SkBlender>, const SkPaint&) override;
 
     void drawDrawable(SkCanvas*, SkDrawable*, const SkMatrix*) override {}
-    void drawMesh(const SkMesh&, sk_sp<SkBlender>, const SkPaint&) override {}
+    void drawMesh(const SkMesh&, sk_sp<SkBlender>, const SkPaint&) override;
 
     // Special images and layers
     sk_sp<SkSurface> makeSurface(const SkImageInfo&, const SkSurfaceProps&) override;
@@ -256,7 +267,8 @@ public:
     void drawCoverageMask(const SkSpecialImage*, const SkMatrix& maskToDevice,
                           const SkSamplingOptions&, const SkPaint&) override;
 
-    bool drawBlurredRRect(const SkRRect&, const SkPaint&, float deviceSigma) override;
+    bool drawBlurredRRect(const SkRRect&, const SkPaint&,
+                          SkV2 localSigma, float deviceSigma) override;
 
 #if defined(GPU_TEST_UTILS)
     int testingOnly_pendingRenderSteps() const;
@@ -399,6 +411,10 @@ private:
 #endif
 
     friend class ClipStack; // for drawClipShape
+
+#if defined(SK_ENABLE_SPARSE_STRIPS)
+    std::unique_ptr<StripGenerator> fStripGenerator;
+#endif
 };
 
 } // namespace skgpu::graphite

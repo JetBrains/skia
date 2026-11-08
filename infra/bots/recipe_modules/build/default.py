@@ -98,8 +98,12 @@ def get_compile_flags(api, checkout_root, out_dir, workdir):
       env['IPHONEOS_DEPLOYMENT_TARGET'] = '18.2'
       args['ios_min_target'] = '"18.0"'
     elif 'iOS' in extra_tokens:
-      env['IPHONEOS_DEPLOYMENT_TARGET'] = '13.0'
-      args['ios_min_target'] = '"13.0"'
+      if 'Graphite' in extra_tokens:
+        env['IPHONEOS_DEPLOYMENT_TARGET'] = '15.0'
+        args['ios_min_target'] = '"15.0"'
+      else:
+        env['IPHONEOS_DEPLOYMENT_TARGET'] = '13.0'
+        args['ios_min_target'] = '"13.0"'
     else:
       # We have some machines on 11.
       env['MACOSX_DEPLOYMENT_TARGET'] = '11.0'
@@ -227,11 +231,13 @@ def get_compile_flags(api, checkout_root, out_dir, workdir):
     args['skia_use_fontations'] = 'true'
     args['skia_use_freetype'] = 'true' # we compare with freetype in tests
     args['skia_use_system_freetype2'] = 'false'
-  if 'RustPNG' in extra_tokens:
+  if 'RustPNG' in extra_tokens or 'RustPNGAndroid' in extra_tokens:
     args['skia_use_rust_png_decode'] = 'true'
     args['skia_use_rust_png_encode'] = 'true'
     args['skia_use_libpng_decode'] = 'false'
     # TODO(b/356875275) set skia_use_libpng_encode to false also
+  if 'RustPNGAndroid' in extra_tokens:
+    args['skia_use_rust_png_for_android'] = 'true'
   if 'RustBMP' in extra_tokens:
     args['skia_use_rust_bmp_decode'] = 'true'
   if 'RustALL' in extra_tokens:
@@ -239,6 +245,8 @@ def get_compile_flags(api, checkout_root, out_dir, workdir):
     args['skia_use_rust_exif'] = 'true'
     args['skia_use_rust_icc'] = 'true'
     args['skia_use_rust_ico_decode'] = 'true'
+    args['skia_use_rust_jpeg_decode'] = 'true'
+    args['skia_use_rust_jpeg_encode'] = 'true'
     args['skia_use_rust_png_decode'] = 'true'
     args['skia_use_rust_png_encode'] = 'true'
     args['skia_use_libpng_decode'] = 'false'
@@ -379,9 +387,10 @@ def compile_fn(api, checkout_root, out_dir):
 
   # Putting ninja on the path makes it easier for subcommands to find it
   # (e.g. when building Dawn via CMake+ninja)
-  # Importantly, this needs to go *after* depot_tools, so we append it
+  # Prepend ninja_root so subcommands use Skia's hermetic ninja binary
+  # rather than wrappers in depot_tools.
   existing_path = env.get('PATH', '%(PATH)s')
-  env['PATH'] = api.path.pathsep.join([existing_path, str(ninja_root)])
+  env['PATH'] = api.path.pathsep.join([str(ninja_root), existing_path])
 
   with api.context(cwd=skia_dir):
     with api.env(env):

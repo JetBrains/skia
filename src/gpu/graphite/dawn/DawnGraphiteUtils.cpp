@@ -7,9 +7,11 @@
 
 #include "src/gpu/graphite/dawn/DawnGraphiteUtils.h"
 
+#include "include/core/SkContext.h"
 #include "include/gpu/ShaderErrorHandler.h"
 #include "include/gpu/graphite/Context.h"
 #include "include/gpu/graphite/dawn/DawnBackendContext.h"
+#include "include/private/SkAttributes.h"
 #include "include/private/SkTArray.h"
 #include "src/gpu/graphite/ContextPriv.h"
 #include "src/gpu/graphite/TextureFormat.h"
@@ -17,6 +19,13 @@
 #include "src/gpu/graphite/dawn/DawnSharedContext.h"
 
 using namespace skia_private;
+
+namespace SkContexts {
+std::unique_ptr<SkContext> MakeGraphite(const skgpu::graphite::DawnBackendContext& dawnContext,
+                              const SkContextOptions& options) {
+    return nullptr;
+}
+}  // namespace SkContexts
 
 namespace skgpu::graphite {
 
@@ -463,7 +472,7 @@ static bool check_shader_module([[maybe_unused]] const DawnSharedContext* shared
             // Walk the message list and check for hard errors.
             self->fSuccess = true;
             for (size_t index = 0; index < info->messageCount; ++index) {
-                const WGPUCompilationMessage& entry = info->messages[index];
+                const WGPUCompilationMessage& entry = SK_UNSAFE_TODO(info->messages[index]);
                 if (entry.type == WGPUCompilationMessageType_Error) {
                     self->fSuccess = false;
                     break;
@@ -474,7 +483,7 @@ static bool check_shader_module([[maybe_unused]] const DawnSharedContext* shared
             if (!self->fSuccess) {
                 std::string errors;
                 for (size_t index = 0; index < info->messageCount; ++index) {
-                    const WGPUCompilationMessage& entry = info->messages[index];
+                    const WGPUCompilationMessage& entry = SK_UNSAFE_TODO(info->messages[index]);
                     std::string messageString(entry.message.data, entry.message.length);
                     errors += "line " + std::to_string(entry.lineNum) + ':' +
                               std::to_string(entry.linePos) + ' ' + messageString + '\n';

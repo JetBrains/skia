@@ -4,6 +4,13 @@
 
 // avoid issue in G3
 #![allow(unused_attributes)]
+#![allow(clippy::boxed_local)]
+#![allow(clippy::collapsible_if)]
+#![allow(clippy::from_over_into)]
+#![allow(clippy::match_ref_pats)]
+#![allow(clippy::needless_lifetimes)]
+#![allow(clippy::redundant_closure)]
+#![allow(clippy::too_many_arguments)]
 
 //! This crate provides C++ bindings for the `png` Rust crate.
 //!
@@ -195,6 +202,13 @@ mod ffi {
             row: &mut &'a [u8],
         ) -> DecodingResult;
         fn expand_last_interlaced_row(
+            self: &Reader,
+            img: &mut [u8],
+            img_row_stride: usize,
+            row: &[u8],
+            bits_per_pixel: u8,
+        );
+        fn splat_last_interlaced_row(
             self: &Reader,
             img: &mut [u8],
             img_row_stride: usize,
@@ -775,7 +789,14 @@ impl Reader {
 
     /// Returns whether the `acTL` chunk exists.
     fn has_actl_chunk(&self) -> bool {
-        self.reader.info().animation_control.is_some()
+        #[cfg(feature = "for_android")]
+        {
+            false
+        }
+        #[cfg(not(feature = "for_android"))]
+        {
+            self.reader.info().animation_control.is_some()
+        }
     }
 
     /// Returns `num_frames` from the `acTL` chunk.  Panics if there is no
@@ -814,7 +835,14 @@ impl Reader {
     /// Returns whether a `fcTL` chunk has been parsed (and can be read using
     /// `get_fctl_info`).
     fn has_fctl_chunk(&self) -> bool {
-        self.reader.info().frame_control.is_some()
+        #[cfg(feature = "for_android")]
+        {
+            false
+        }
+        #[cfg(not(feature = "for_android"))]
+        {
+            self.reader.info().frame_control.is_some()
+        }
     }
 
     /// Returns `png::FrameControl` information.
@@ -932,6 +960,25 @@ impl Reader {
             panic!("This function should only be called after decoding an interlaced row");
         };
         png::expand_interlaced_row(img, img_row_stride, row, adam7info, bits_per_pixel);
+    }
+
+    /// Expands the last decoded interlaced row, replicating each sample over
+    /// the pixels that later Adam7 passes will overwrite - see
+    /// https://docs.rs/png/latest/png/fn.splat_interlaced_row.html
+    ///
+    /// `img.len()` has to cover whole rows for the full height of the frame,
+    /// because that is how the number of rows is inferred.
+    fn splat_last_interlaced_row(
+        &self,
+        img: &mut [u8],
+        img_row_stride: usize,
+        row: &[u8],
+        bits_per_pixel: u8,
+    ) {
+        let Some(png::InterlaceInfo::Adam7(adam7info)) = self.last_interlace_info.as_ref() else {
+            panic!("This function should only be called after decoding an interlaced row");
+        };
+        png::splat_interlaced_row(img, img_row_stride, row, adam7info, bits_per_pixel);
     }
 
     /// Decodes the next row directly into a caller-provided buffer - see

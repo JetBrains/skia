@@ -27,23 +27,27 @@
 
 namespace skgpu::graphite {
 
+// NOTE: This step doesn't perform shading and self-intersections are resolved by modifying the
+// stencil buffer, so Flags::kAllowSelfIntersection is added.
 MiddleOutFanRenderStep::MiddleOutFanRenderStep(Layout layout, bool evenOdd)
         : RenderStep(layout,
                      evenOdd ? RenderStepID::kMiddleOutFan_EvenOdd
                              : RenderStepID::kMiddleOutFan_Winding,
-                     Flags::kRequiresMSAA | Flags::kAppendVertices,
+                     Flags::kRequiresMSAA | Flags::kAppendVertices
+                                          | Flags::kAllowsSelfIntersection,
                      /*uniforms=*/{{"localToDevice", SkSLType::kFloat4x4}},
                      PrimitiveType::kTriangles,
                      evenOdd ? kEvenOddStencilPass : kWindingStencilPass,
                      /*staticAttrs=*/ {},
                      /*appendAttrs=*/
                      {{{"position", VertexAttribType::kFloat2, SkSLType::kFloat2},
-                     {"depth", VertexAttribType::kFloat, SkSLType::kFloat},
-                     {"ssboIndex", VertexAttribType::kUInt, SkSLType::kUInt}}}) {}
+                       {"depth", VertexAttribType::kFloat, SkSLType::kFloat},
+                       {"ssboIndex", VertexAttribType::kUInt, SkSLType::kUInt}}},
+                     /*storageUniforms=*/{}) {}
 
 MiddleOutFanRenderStep::~MiddleOutFanRenderStep() {}
 
-std::string MiddleOutFanRenderStep::vertexSkSL() const {
+std::string MiddleOutFanRenderStep::vertexSkSL(const RootNodesInfo&) const {
     return
         "float4 devPosition = localToDevice * float4(position, 0.0, 1.0);\n"
         "devPosition.z = depth;\n"
@@ -51,6 +55,7 @@ std::string MiddleOutFanRenderStep::vertexSkSL() const {
 }
 
 void MiddleOutFanRenderStep::writeVertices(DrawWriter* writer,
+                                           StorageContext* /*storageContext*/,
                                            const DrawParams& params,
                                            uint32_t ssboIndex) const {
     // TODO: Have Shape provide a path-like iterator so we don't actually have to convert non

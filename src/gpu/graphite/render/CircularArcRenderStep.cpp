@@ -126,14 +126,19 @@ static void write_vertex_buffer(VertexWriter writer) {
     } // otherwise static buffer creation failed, so do nothing; Context initialization will fail.
 }
 
+// NOTE: A circular arc with round caps can trigger can overlap when it's not quite a 360
+// degree arc and the stroke width is sufficient for the caps to overlap. However, this is handled
+// in the fragment shader and the emitted triangles do not produce self intersections.
 CircularArcRenderStep::CircularArcRenderStep(Layout layout, StaticBufferManager* bufferManager)
         : RenderStep(layout,
                      RenderStepID::kCircularArc,
-                     Flags::kPerformsShading | Flags::kEmitsCoverage | Flags::kOutsetBoundsForAA |
-                     Flags::kAppendInstances,
+                     Flags::kPerformsShading | Flags::kEmitsCoverage
+                                             | Flags::kOutsetBoundsForAA
+                                             | Flags::kAppendInstances
+                                             | Flags::kNoSelfIntersections,
                      /*uniforms=*/{},
                      PrimitiveType::kTriangleStrip,
-                     kDirectDepthLessPass,
+                     /*stencilSettings=*/{},
                      /*staticAttrs=*/{{
                              {"position", VertexAttribType::kFloat3, SkSLType::kFloat3},
                      }},
@@ -158,6 +163,7 @@ CircularArcRenderStep::CircularArcRenderStep(Layout layout, StaticBufferManager*
                              {"mat1", VertexAttribType::kFloat3, SkSLType::kFloat3},
                              {"mat2", VertexAttribType::kFloat3, SkSLType::kFloat3},
                      }},
+                     /*storageUniforms=*/{},
                      /*varyings=*/{{
                              // Normalized offset vector plus radii
                              {"circleEdge", SkSLType::kFloat4},
@@ -178,7 +184,7 @@ CircularArcRenderStep::CircularArcRenderStep(Layout layout, StaticBufferManager*
 
 CircularArcRenderStep::~CircularArcRenderStep() {}
 
-std::string CircularArcRenderStep::vertexSkSL() const {
+std::string CircularArcRenderStep::vertexSkSL(const RootNodesInfo&) const {
     // Returns the body of a vertex function, which must define a float4 devPosition variable and
     // must write to an already-defined float2 stepLocalCoords variable.
     return "float4 devPosition = circular_arc_vertex_fn("
@@ -206,6 +212,7 @@ const char* CircularArcRenderStep::fragmentCoverageSkSL() const {
 }
 
 void CircularArcRenderStep::writeVertices(DrawWriter* writer,
+                                          StorageContext* /*storageContext*/,
                                           const DrawParams& params,
                                           uint32_t ssboIndex) const {
     SkASSERT(params.geometry().isShape() && params.geometry().shape().isArc());

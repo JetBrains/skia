@@ -17,6 +17,7 @@
 
 class SkMatrix;
 class SkPath;
+class SkShadowPathOps;
 class SkVertices;
 struct SkPoint3;
 
@@ -30,7 +31,8 @@ typedef std::function<SkScalar(SkScalar, SkScalar)> HeightFunc;
  * If transparent is true, then the center of the ambient shadow will be filled in.
  */
 sk_sp<SkVertices> MakeAmbient(const SkPath& path, const SkMatrix& ctm,
-                              const SkPoint3& zPlane, bool transparent);
+                              const SkPoint3& zPlane, bool transparent,
+                              const SkShadowPathOps* = nullptr);
 
 /**
  * This function generates a spot shadow mesh for a path by walking the transformed path,
@@ -39,7 +41,7 @@ sk_sp<SkVertices> MakeAmbient(const SkPath& path, const SkMatrix& ctm,
  */
 sk_sp<SkVertices> MakeSpot(const SkPath& path, const SkMatrix& ctm, const SkPoint3& zPlane,
                            const SkPoint3& lightPos, SkScalar lightRadius, bool transparent,
-                           bool directional);
+                           bool directional, const SkShadowPathOps* = nullptr);
 
 
 }  // namespace SkShadowTessellator

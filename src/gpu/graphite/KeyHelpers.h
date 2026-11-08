@@ -35,7 +35,6 @@ class SkRuntimeEffect;
 namespace skgpu::graphite {
 
 class DrawContext;
-class StorageBufferManager;
 class PipelineDataGatherer;
 class UniquePaintParamsID;
 
@@ -175,6 +174,7 @@ struct YUVImageShaderBlock {
         float fAlphaParam = 0;
         SkMatrix fYUVtoRGBMatrix;
         SkPoint3 fYUVtoRGBTranslate;
+        bool fPacked = false;
 
         // TODO: Currently these are only filled in when we're generating the key from an actual
         // SkImageShader. In the pre-compile case we will need to create Graphite promise
@@ -354,7 +354,10 @@ void AddAnalyticClip(const KeyContext&, const NonMSAAClip&);
  * Adds a block that references the primitive color produced by the RenderStep and accounts for
  * color space transformation.
  */
-void AddPrimitiveColor(const KeyContext&, bool skipColorXform);
+void AddPrimitiveColor(const KeyContext&,
+                       bool skipColorXform,
+                       SkColorSpace* primitiveColorSpace = nullptr,
+                       SkAlphaType primitiveAlphaType = kPremul_SkAlphaType);
 
 /**
  * Blend mode color filters blend their input (as the dst color) with some given color (supplied
@@ -390,6 +393,12 @@ struct RuntimeEffectBlock {
 
     // Add a post-amble for runtime effects that use the toLinearSrgb/fromLinearSrgb intrinsics
     static void HandleIntrinsics(const KeyContext&, const SkRuntimeEffect*);
+};
+
+struct MeshShaderBlock {
+    static void AddBlock(const KeyContext&,
+                         const SkMeshSpecification*,
+                         SkSpan<const SkRuntimeEffect::ChildPtr> children);
 };
 
 void AddToKey(const KeyContext&, const SkBlender*);

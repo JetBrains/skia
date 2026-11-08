@@ -82,10 +82,13 @@ public:
             SkEnumBitMask<DstUsage> dstUsage,
             BarrierType barrierBeforeDraws,
             PipelineDataGatherer* gatherer,
+            StorageContext* storageContext,
             const StrokeStyle* stroke,
             Layer*) override;
 
     std::unique_ptr<DrawPass> snapDrawPass(Recorder* recorder,
+                                           StorageContext* storageContext,
+                                           DrawContext* drawContext,
                                            sk_sp<TextureProxy> target,
                                            const SkImageInfo& targetInfo,
                                            DstReadStrategy dstReadStrategy) override;

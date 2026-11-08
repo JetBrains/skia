@@ -14,6 +14,7 @@
 #include "include/core/SkTileMode.h"
 #include "include/gpu/graphite/Recorder.h"
 #include "include/private/SkAssert.h"
+#include "include/private/SkAttributes.h"
 #include "include/private/SkDebug.h"
 #include "src/core/SkSLTypeShared.h"
 #include "src/gpu/graphite/AtlasProvider.h"
@@ -56,15 +57,19 @@ RenderStep::RenderStepID variant_id(skgpu::MaskFormat variant) {
 
 }  // namespace
 
+// NOTE: Sub run glyphs can emit triangles that self intersect, and we need those to produce
+// double blending (although usually one glyph will have 0 coverage at that pixel), so we include
+// Flags::kAllowSelfIntersection.
 BitmapTextRenderStep::BitmapTextRenderStep(Layout layout, skgpu::MaskFormat variant)
         : RenderStep(layout,
                      variant_id(variant),
-                     Flags(variant) | Flags::kAppendInstances,
+                     Flags(variant) | Flags::kAppendInstances
+                                    | Flags::kAllowsSelfIntersection,
                      /*uniforms=*/{{"maskToDevice", SkSLType::kFloat4x4},
                                    {"localToDevice", SkSLType::kFloat4x4},
                                    {"atlasSizeInv", SkSLType::kFloat2}},
                      PrimitiveType::kTriangleStrip,
-                     kDirectDepthLEqualPass,
+                     /*stencilSettings=*/{},
                      /*staticAttrs=*/ {},
                      /*appendAttrs=*/
                      {{{"size", VertexAttribType::kUShort2, SkSLType::kUShort2},
@@ -74,10 +79,18 @@ BitmapTextRenderStep::BitmapTextRenderStep(Layout layout, skgpu::MaskFormat vari
                       {"strikeToSourceScale", VertexAttribType::kFloat, SkSLType::kFloat},
                       {"depth", VertexAttribType::kFloat, SkSLType::kFloat},
                       {"ssboIndex", VertexAttribType::kUInt, SkSLType::kUInt}}},
+                     /*storageUniforms=*/{},
                      /*varyings=*/
                      {{{"textureCoords", SkSLType::kFloat2},
+#ifdef SK_DISABLE_GRAPHITE_NONINTEGRAL_VARYINGS_FLAT_INTERPOLATION
                       {"texIndex", SkSLType::kHalf},
-                      {"maskFormat", SkSLType::kHalf}}}) {}
+                      {"maskFormat", SkSLType::kHalf}
+#else
+                      {"texIndex", SkSLType::kHalf, Interpolation::kFlat},
+                      {"maskFormat", SkSLType::kHalf, Interpolation::kFlat}
+#endif
+                      }}) {}
+
 
 BitmapTextRenderStep::~BitmapTextRenderStep() {}
 
@@ -95,7 +108,7 @@ SkEnumBitMask<RenderStep::Flags> BitmapTextRenderStep::Flags(skgpu::MaskFormat v
     }
 }
 
-std::string BitmapTextRenderStep::vertexSkSL() const {
+std::string BitmapTextRenderStep::vertexSkSL(const RootNodesInfo&) const {
     // Returns the body of a vertex function, which must define a float4 devPosition variable and
     // must write to an already-defined float2 stepLocalCoords variable.
     return "texIndex = half(indexAndFlags.x);"
@@ -128,7 +141,7 @@ std::string BitmapTextRenderStep::texturesAndSamplersSkSL(
 }
 
 
-const char* BitmapTextRenderStep::fragmentColorSkSL() const {
+std::string BitmapTextRenderStep::fragmentColorSkSL(const RootNodesInfo&) const {
     // The returned SkSL must write its color into a 'half4 primitiveColor' variable
     // (defined in the calling code).
     static_assert(kNumTextAtlasTextures == 4);
@@ -156,6 +169,7 @@ const char* BitmapTextRenderStep::fragmentCoverageSkSL() const {
 bool BitmapTextRenderStep::usesUniformsInFragmentSkSL() const { return false; }
 
 void BitmapTextRenderStep::writeVertices(DrawWriter* dw,
+                                         StorageContext* /*storageContext*/,
                                          const DrawParams& params,
                                          uint32_t ssboIndex) const {
     const SubRunData& subRunData = params.geometry().subRunData();
@@ -179,8 +193,8 @@ void BitmapTextRenderStep::writeUniformsAndTextures(const DrawParams& params,
     unsigned int numProxies;
     Recorder* recorder = subRunData.recorder();
     const sk_sp<TextureProxy>* proxies =
-            recorder->priv().atlasProvider()->textAtlasManager()->getProxies(
-                    subRunData.subRun()->maskFormat(), &numProxies);
+            recorder->priv().getOrCreateAtlasProvider()->textAtlasManager()->getProxies(
+                    subRunData.resolvedMaskFormat(), &numProxies);
     SkASSERT(proxies && numProxies > 0);
 
     // write uniforms
@@ -199,7 +213,7 @@ void BitmapTextRenderStep::writeUniformsAndTextures(const DrawParams& params,
 
     // write textures and samplers
     for (unsigned int i = 0; i < numProxies; ++i) {
-        gatherer->add(proxies[i], {SkFilterMode::kNearest, SkTileMode::kClamp});
+        gatherer->add(SK_UNSAFE_TODO(proxies[i]), {SkFilterMode::kNearest, SkTileMode::kClamp});
     }
     // If the atlas has less than 4 active proxies we still need to set up samplers for the shader.
     for (unsigned int i = numProxies; i < kNumTextAtlasTextures; ++i) {

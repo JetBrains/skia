@@ -359,7 +359,9 @@ struct GrTriangulator::VertexList {
 // A line equation in implicit form. fA * x + fB * y + fC = 0, for all points (x, y) on the line.
 struct GrTriangulator::Line {
     Line(double a, double b, double c) : fA(a), fB(b), fC(c) {}
-    Line(Vertex* p, Vertex* q) : Line(p->fPoint, q->fPoint) {}
+    Line(Vertex* p, Vertex* q)
+        : Line(p ? p->fPoint : SkPoint{0.0f, 0.0f},
+               q ? q->fPoint : SkPoint{0.0f, 0.0f}) {}
     Line(const SkPoint& p, const SkPoint& q)
         : fA(static_cast<double>(q.fY) - p.fY)      // a = dY
         , fB(static_cast<double>(p.fX) - q.fX)      // b = -dX
@@ -451,12 +453,19 @@ struct GrTriangulator::Edge {
         // Coerce points coincident with the vertices to have dist = 0, since converting from
         // a double intersection point back to float storage might construct a point that's no
         // longer on the ideal line.
-        return (p == fTop->fPoint || p == fBottom->fPoint) ? 0.0 : fLine.dist(p);
+        if ((fTop && p == fTop->fPoint) || (fBottom && p == fBottom->fPoint)) {
+            return 0.0;
+        }
+        return fLine.dist(p);
     }
 
     bool isRightOf(const Vertex& v) const { return this->dist(v.fPoint) < 0.0; }
     bool isLeftOf(const Vertex& v) const { return this->dist(v.fPoint)  > 0.0; }
-    void recompute() { fLine = Line(fTop, fBottom); }
+    void recompute() {
+        // Should have bailed in setTop/Bottom if this wasn't true.
+        SkASSERT(hasTopAndBottom());
+        fLine = Line(fTop, fBottom);
+    }
     void insertAbove(Vertex*, const Comparator&);
     void insertBelow(Vertex*, const Comparator&);
     void disconnect();

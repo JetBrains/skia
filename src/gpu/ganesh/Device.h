@@ -49,6 +49,7 @@ class SkPixmap;
 class SkRRect;
 class SkRecorder;
 class SkRegion;
+class SkShadowPathOps;
 class SkSpecialImage;
 class SkSurfaceProps;
 class SkSurface_Ganesh;
@@ -196,6 +197,7 @@ public:
     void drawMesh(const SkMesh&, sk_sp<SkBlender>, const SkPaint&) override;
 #if !defined(SK_ENABLE_OPTIMIZE_SIZE)
     void drawShadow(SkCanvas*, const SkPath&, const SkDrawShadowRec&) override;
+    const SkShadowPathOps* shadowPathOps() const override;
 #endif
     void drawAtlas(SkSpan<const SkRSXform>, SkSpan<const SkRect>, SkSpan<const SkColor>,
                    sk_sp<SkBlender>, const SkPaint&) override;
@@ -222,7 +224,8 @@ public:
 
     void drawCoverageMask(const SkSpecialImage* mask, const SkMatrix& maskToDevice,
                           const SkSamplingOptions& localToDevice, const SkPaint& paint) override;
-    bool drawBlurredRRect(const SkRRect&, const SkPaint&, float deviceSigma) override;
+    bool drawBlurredRRect(const SkRRect&, const SkPaint&,
+                          SkV2 localSigma, float deviceSigma) override;
 
     void drawEdgeAAQuad(const SkRect& rect, const SkPoint clip[4], SkCanvas::QuadAAFlags aaFlags,
                         const SkColor4f& color, SkBlendMode mode) override;

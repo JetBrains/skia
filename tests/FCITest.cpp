@@ -151,3 +151,65 @@ DEF_TEST(FontConfigInterface_MatchStyleNamedInstance, reporter) {
         }
   }
 }
+
+DEF_TEST(FontConfigInterface_MissingFontRejection, reporter) {
+    FcConfig* config = build_fontconfig_with_fontfile("/fonts/NotoSansCJK-VF-subset.otf.ttc");
+    sk_sp<SkFontConfigInterfaceDirect> fciDirect(new SkFontConfigInterfaceDirect(config));
+
+    SkFontStyle fontStyle(400, SkFontStyle::kNormal_Width, SkFontStyle::kUpright_Slant);
+    SkFontConfigInterface::FontIdentity resultIdentity;
+    SkString resultFamily;
+    SkFontStyle resultStyle;
+
+    // Requesting a non-existent family name when fallback is NOT allowed (i.e. not "sans", "serif",
+    // "monospace") should cleanly return false without crashing, leaking memory, or returning an
+    // unwanted default substitute
+    const bool r = fciDirect->matchFamilyName("NonExistentFontFamilyThatDoesNotExist",
+                                              fontStyle,
+                                              &resultIdentity,
+                                              &resultFamily,
+                                              &resultStyle);
+    REPORTER_ASSERT(reporter, !r, "Expecting missing font request to be rejected.");
+}
+
+DEF_TEST(FontConfigInterface_GenericFallbackAllowed, reporter) {
+    FcConfig* config = build_fontconfig_with_fontfile("/fonts/NotoSansCJK-VF-subset.otf.ttc");
+    sk_sp<SkFontConfigInterfaceDirect> fciDirect(new SkFontConfigInterfaceDirect(config));
+
+    SkFontStyle fontStyle(400, SkFontStyle::kNormal_Width, SkFontStyle::kUpright_Slant);
+    SkFontConfigInterface::FontIdentity resultIdentity;
+    SkString resultFamily;
+    SkFontStyle resultStyle;
+
+    // When requesting a generic fallback family like "sans" or "monospace",
+    // IsFallbackFontAllowed is true, so matchFamilyName should succeed
+    const bool r = fciDirect->matchFamilyName(
+            "sans", fontStyle, &resultIdentity, &resultFamily, &resultStyle);
+    REPORTER_ASSERT(reporter, r, "Expecting generic fallback 'sans' request to find a font.");
+}
+
+DEF_TEST(FontConfigInterface_OnlyCheckFirstValidCandidate, reporter) {
+    // NotoSansCJK-VF-subset.otf.ttc contains multiple faces:
+    //   face 0: "Noto Sans CJK JP"
+    //   face 1: "Noto Sans CJK HK"
+    //   face 2: "Noto Sans CJK SC" (in the same SIMHEI equivalence class as "Simhei")
+    // Because build_fontconfig_with_fontfile uses an empty FcConfig with no alias rules,
+    // requesting "Simhei" ranks face 0 ("Noto Sans CJK JP") first in FcFontMatch / FcFontSort.
+    // MatchFont must only check the first valid candidate (face 0) for family acceptability
+    // and reject the match, rather than scanning all candidates in font_set and matching
+    // "Noto Sans CJK SC" via IsMetricCompatibleReplacement (b/564547803).
+    FcConfig* config = build_fontconfig_with_fontfile("/fonts/NotoSansCJK-VF-subset.otf.ttc");
+    sk_sp<SkFontConfigInterfaceDirect> fciDirect(new SkFontConfigInterfaceDirect(config));
+
+    SkFontStyle fontStyle(400, SkFontStyle::kNormal_Width, SkFontStyle::kUpright_Slant);
+    SkFontConfigInterface::FontIdentity resultIdentity;
+    SkString resultFamily;
+    SkFontStyle resultStyle;
+
+    const bool r = fciDirect->matchFamilyName(
+            "Simhei", fontStyle, &resultIdentity, &resultFamily, &resultStyle);
+    REPORTER_ASSERT(reporter,
+                    !r,
+                    "Expecting 'Simhei' to be rejected when the first valid candidate does not "
+                    "match, rather than matching 'Noto Sans CJK SC' later in font_set.");
+}

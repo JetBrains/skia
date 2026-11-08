@@ -16,6 +16,7 @@
 #include "include/core/SkTileMode.h"
 #include "include/gpu/graphite/Recorder.h"
 #include "include/private/SkAssert.h"
+#include "include/private/SkAttributes.h"
 #include "include/private/SkDebug.h"
 #include "include/private/SkEnumBitMask.h"
 #include "src/core/SkDistanceFieldGen.h"
@@ -49,18 +50,24 @@ constexpr int kNumSDFAtlasTextures = 4;
 
 }  // namespace
 
+// NOTE: Sub run glyphs can emit triangles that self intersect, and we need those to produce
+// double blending (although usually one glyph will have 0 coverage at that pixel), so we include
+// Flags::kAllowSelfIntersection.
 SDFTextLCDRenderStep::SDFTextLCDRenderStep(Layout layout)
         : RenderStep(layout,
                      RenderStepID::kSDFTextLCD,
-                     Flags::kPerformsShading | Flags::kHasTextures | Flags::kEmitsCoverage |
-                     Flags::kLCDCoverage | Flags::kAppendInstances,
+                     Flags::kPerformsShading | Flags::kHasTextures
+                                             | Flags::kEmitsCoverage
+                                             | Flags::kLCDCoverage
+                                             | Flags::kAppendInstances
+                                             | Flags::kAllowsSelfIntersection,
                      /*uniforms=*/{{"maskToDevice", SkSLType::kFloat4x4},
                                    {"localToDevice", SkSLType::kFloat4x4},
                                    {"atlasSizeInv", SkSLType::kFloat2},
                                    {"pixelGeometryDelta", SkSLType::kHalf2},
                                    {"gammaParams", SkSLType::kHalf4}},
                      PrimitiveType::kTriangleStrip,
-                     kDirectDepthLEqualPass,
+                     /*stencilSettings=*/{},
                      /*staticAttrs=*/ {},
                      /*appendAttrs=*/
                      {{{"size", VertexAttribType::kUShort2, SkSLType::kUShort2},
@@ -70,6 +77,7 @@ SDFTextLCDRenderStep::SDFTextLCDRenderStep(Layout layout)
                       {"strikeToSourceScale", VertexAttribType::kFloat, SkSLType::kFloat},
                       {"depth", VertexAttribType::kFloat, SkSLType::kFloat},
                       {"ssboIndex", VertexAttribType::kUInt, SkSLType::kUInt}}},
+                     /*storageUniforms=*/{},
                      /*varyings=*/
                      {{{"unormTexCoords", SkSLType::kFloat2},
                       {"textureCoords", SkSLType::kFloat2},
@@ -77,7 +85,7 @@ SDFTextLCDRenderStep::SDFTextLCDRenderStep(Layout layout)
 
 SDFTextLCDRenderStep::~SDFTextLCDRenderStep() {}
 
-std::string SDFTextLCDRenderStep::vertexSkSL() const {
+std::string SDFTextLCDRenderStep::vertexSkSL(const RootNodesInfo&) const {
     // Returns the body of a vertex function, which must define a float4 devPosition variable and
     // must write to an already-defined float2 stepLocalCoords variable.
     return "texIndex = half(indexAndFlags.x);"
@@ -129,6 +137,7 @@ const char* SDFTextLCDRenderStep::fragmentCoverageSkSL() const {
 }
 
 void SDFTextLCDRenderStep::writeVertices(DrawWriter* dw,
+                                         StorageContext* /*storageContext*/,
                                          const DrawParams& params,
                                          uint32_t ssboIndex) const {
     const SubRunData& subRunData = params.geometry().subRunData();
@@ -152,8 +161,8 @@ void SDFTextLCDRenderStep::writeUniformsAndTextures(const DrawParams& params,
     unsigned int numProxies;
     Recorder* recorder = subRunData.recorder();
     const sk_sp<TextureProxy>* proxies =
-            recorder->priv().atlasProvider()->textAtlasManager()->getProxies(
-                    subRunData.subRun()->maskFormat(), &numProxies);
+            recorder->priv().getOrCreateAtlasProvider()->textAtlasManager()->getProxies(
+                    subRunData.resolvedMaskFormat(), &numProxies);
     SkASSERT(proxies && numProxies > 0);
 
     // write uniforms
@@ -210,7 +219,7 @@ void SDFTextLCDRenderStep::writeUniformsAndTextures(const DrawParams& params,
 
     // write textures and samplers
     for (unsigned int i = 0; i < numProxies; ++i) {
-        gatherer->add(proxies[i], {SkFilterMode::kLinear, SkTileMode::kClamp});
+        gatherer->add(SK_UNSAFE_TODO(proxies[i]), {SkFilterMode::kLinear, SkTileMode::kClamp});
     }
     // If the atlas has less than 4 active proxies we still need to set up samplers for the shader.
     for (unsigned int i = numProxies; i < kNumSDFAtlasTextures; ++i) {

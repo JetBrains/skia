@@ -7,7 +7,6 @@
 #include "include/gpu/graphite/Recorder.h"
 
 #include "include/core/SkBitmap.h"
-#include "include/core/SkCPURecorder.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkImage.h"
 #include "include/core/SkImageInfo.h"
@@ -23,6 +22,7 @@
 #include "include/gpu/graphite/ImageProvider.h"
 #include "include/gpu/graphite/Recording.h"
 #include "include/gpu/graphite/TextureInfo.h"
+#include "include/private/SkAttributes.h"
 #include "include/private/SkLog.h"
 #include "src/capture/SkCaptureManager.h"
 #include "src/core/SkMipmap.h"
@@ -125,13 +125,11 @@ Recorder::Recorder(sk_sp<SharedContext> sharedContext,
         , fRuntimeEffectDict(sk_make_sp<RuntimeEffectDictionary>())
         , fRootTaskList(new TaskList)
         , fRootUploads(new UploadList)
-        , fStorageBufferManager(sk_make_sp<StorageBufferManager>())
         , fProxyReadCounts(new ProxyReadCountMap)
         , fUniqueID(next_id())
         , fRequireOrderedRecordings(options.fRequireOrderedRecordings.has_value()
                                             ? *options.fRequireOrderedRecordings
                                             : fSharedContext->caps()->requireOrderedRecordings())
-        , fAtlasProvider(std::make_unique<AtlasProvider>(this))
         , fTokenTracker(std::make_unique<TokenTracker>())
         , fStrikeCache(std::make_unique<sktext::gpu::StrikeCache>())
         , fTextBlobCache(std::make_unique<sktext::gpu::TextBlobRedrawCoordinator>(fUniqueID)) {
@@ -191,12 +189,10 @@ Recorder::~Recorder() {
 
 BackendApi Recorder::backend() const { return fSharedContext->backend(); }
 
-skcpu::Recorder* Recorder::cpuRecorder() {
-    return skcpu::Recorder::TODO();
-}
+skcpu::Recorder* Recorder::cpuRecorder() { return skcpu::Recorder::TODO(); }
 
 std::unique_ptr<Recording> Recorder::snap() {
-    TRACE_EVENT0_ALWAYS("skia.gpu", TRACE_FUNC);
+    TRACE_EVENT0_ALWAYS("skia.gpu", "Snap Recording");
     ASSERT_SINGLE_OWNER
 
     if (fTargetProxyData) {
@@ -218,10 +214,25 @@ std::unique_ptr<Recording> Recorder::snap() {
                                                                                  : SK_InvalidGenID,
                                                        std::move(fTargetProxyData),
                                                        std::move(fFinishedProcs)));
+    if (fSharedContext->captureManager() &&
+        fSharedContext->captureManager()->isCurrentlyCapturing()) {
+        skia_private::TArray<uint32_t> activeStorageIDs;
+        for (const auto& device : fTrackedDevices) {
+            if (device && device->target().proxy()) {
+                activeStorageIDs.push_back(device->target().proxy()->getPixelStorageId());
+            }
+        }
+        skia_private::TArray<sk_sp<SkPicture>> allCaptured = std::move(fCapturedPictures);
+        auto remaining = fSharedContext->captureManager()->snapDrawTasksForStorageIDs(
+                activeStorageIDs);
+        for (auto& pic : remaining) {
+            allCaptured.push_back(std::move(pic));
+        }
+        recording->priv().setCapturedPictures(std::move(allCaptured));
+    }
     // Allow the buffer managers to add any collected tasks for data transfer or initialization
     // before moving the root task list to the Recording.
-    bool valid = fStorageBufferManager->finalize(fDrawBufferManager.get());
-    valid &= fDrawBufferManager->transferToRecording(recording.get());
+    bool valid = fDrawBufferManager->transferToRecording(recording.get());
 
     // We create the Recording's full task list even if the DrawBufferManager failed because it is
     // a convenient way to ensure everything else is unmapped and reset for the next Recording.
@@ -251,7 +262,9 @@ std::unique_ptr<Recording> Recorder::snap() {
                                                 fRuntimeEffectDict);
     if (!valid) {
         recording = nullptr;
-        fAtlasProvider->invalidateAtlases();
+        if (fAtlasProvider) {
+            fAtlasProvider->invalidateAtlases();
+        }
     }
 
     // Process the return queue at least once to keep it from growing too large, as otherwise
@@ -261,8 +274,12 @@ std::unique_ptr<Recording> Recorder::snap() {
     // Remaining cleanup that must always happen regardless of success or failure
     fRuntimeEffectDict = sk_make_sp<RuntimeEffectDictionary>();
     fProxyReadCounts = std::make_unique<ProxyReadCountMap>();
-    fStorageBufferManager = sk_make_sp<StorageBufferManager>();
-    if (!fRequireOrderedRecordings) {
+    for (const auto& device : fTrackedDevices) {
+        if (device) {
+            device->resetStorageCache();
+        }
+    }
+    if (!fRequireOrderedRecordings && fAtlasProvider) {
         fAtlasProvider->invalidateAtlases();
     }
 
@@ -306,8 +323,17 @@ SkCanvas* Recorder::makeCaptureCanvas(SkCanvas* canvas) {
 }
 
 void Recorder::createCaptureBreakpoint(SkSurface* surface) {
-   if (fSharedContext->captureManager()) {
-        fSharedContext->captureManager()->snapPicture(surface);
+    if (fSharedContext->captureManager()) {
+        auto picture = fSharedContext->captureManager()->snapPicture(surface);
+        if (picture) {
+            fCapturedPictures.push_back(std::move(picture));
+        }
+    }
+}
+
+void Recorder::deregisterCaptureCanvas(SkCanvas* canvas) {
+    if (fSharedContext->captureManager()) {
+        fSharedContext->captureManager()->deregisterCaptureCanvas(canvas);
     }
 }
 
@@ -401,8 +427,9 @@ bool Recorder::updateBackendTexture(const BackendTexture& backendTex,
 
     skia_private::STArray<16, MipLevel> mipLevels(numLevels);
     for (int i = 0; i < numLevels; ++i) {
-        SkASSERT(srcData[i].info().colorInfo() == srcData[0].info().colorInfo());
-        mipLevels.push_back({srcData[i].addr(), srcData[i].rowBytes()});
+        SkASSERT(SK_UNSAFE_TODO(srcData[i].info().colorInfo()) == srcData[0].info().colorInfo());
+        mipLevels.push_back(
+                {SK_UNSAFE_TODO(srcData[i].addr()), SK_UNSAFE_TODO(srcData[i].rowBytes())});
     }
 
     // Src and dst colorInfo are the same
@@ -522,7 +549,9 @@ void Recorder::freeGpuResources() {
 
     // Notify the atlas and resource provider to free any resources it can (does not include
     // resources that are locked due to pending work).
-    fAtlasProvider->freeGpuResources();
+    if (fAtlasProvider) {
+        fAtlasProvider->freeGpuResources();
+    }
 
     fResourceProvider->freeGpuResources();
 
@@ -713,6 +742,30 @@ sk_sp<TextureProxy> RecorderPriv::CreateCachedProxy(Recorder* recorder,
 
 size_t RecorderPriv::getResourceCacheLimit() const {
     return fRecorder->fResourceProvider->getResourceCacheLimit();
+}
+
+AtlasProvider* RecorderPriv::getOrCreateAtlasProvider() {
+    ASSERT_SINGLE_OWNER_PRIV
+    if (!fRecorder->fAtlasProvider) {
+        fRecorder->fAtlasProvider = std::make_unique<AtlasProvider>(fRecorder);
+    }
+    return fRecorder->fAtlasProvider.get();
+}
+
+void RecorderPriv::recordAtlasProviderUploads(DrawContext* dc) {
+    ASSERT_SINGLE_OWNER_PRIV
+    if (!fRecorder->fAtlasProvider) {
+        return;
+    }
+    fRecorder->fAtlasProvider->recordUploads(dc);
+}
+
+void RecorderPriv::compactAtlasProvider() {
+    ASSERT_SINGLE_OWNER_PRIV
+    if (!fRecorder->fAtlasProvider) {
+        return;
+    }
+    fRecorder->fAtlasProvider->compact();
 }
 
 #if defined(GPU_TEST_UTILS)

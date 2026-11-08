@@ -29,6 +29,7 @@
 #include "tests/Test.h"
 #include "tools/Resources.h"
 
+#include <array>
 #include <cstdint>
 #include <cstring>
 #include <memory>
@@ -619,7 +620,7 @@ DEF_TEST(AndroidCodec_gainmapInfoEncode, r) {
     SkBitmap baseBitmap;
     baseBitmap.allocPixels(SkImageInfo::MakeN32Premul(16, 16));
 
-    SkBitmap gainmapBitmaps[kNumTests];
+    std::array<SkBitmap, kNumTests> gainmapBitmaps;
     gainmapBitmaps[0].allocPixels(SkImageInfo::MakeN32Premul(16, 16));
     gainmapBitmaps[1].allocPixels(SkImageInfo::MakeN32Premul(8, 8));
     gainmapBitmaps[2].allocPixels(
@@ -627,7 +628,7 @@ DEF_TEST(AndroidCodec_gainmapInfoEncode, r) {
     gainmapBitmaps[3].allocPixels(
             SkImageInfo::Make(8, 8, kGray_8_SkColorType, kPremul_SkAlphaType));
 
-    SkGainmapInfo infos[kNumTests] = {
+    std::array<SkGainmapInfo, kNumTests> infos = {{
             // Multi-channel, UltraHDR-compatible.
             {{1.f, 2.f, 4.f, 1.f},
              {8.f, 16.f, 32.f, 1.f},
@@ -672,7 +673,7 @@ DEF_TEST(AndroidCodec_gainmapInfoEncode, r) {
              SkGainmapInfo::BaseImageType::kHDR,
              SkGainmapInfo::Type::kDefault,
              SkColorSpace::MakeRGB(SkNamedTransferFn::kSRGB, SkNamedGamut::kDisplayP3)},
-    };
+    }};
 
     for (size_t i = 0; i < kNumTests; ++i) {
         // Encode |gainmapInfo|.
@@ -1067,3 +1068,48 @@ DEF_TEST(AndroidCodec_gainmapInfoParse, r) {
 }
 
 #endif  // !defined(SK_ENABLE_NDK_IMAGES)
+
+DEF_TEST(AndroidCodec_gainmapInfoParseInvalidRational, r) {
+    // Single-channel ISO 21496-1 metadata: a 5-byte header followed by 7 rationals, each a 4-byte
+    // numerator followed by a 4-byte denominator.
+    constexpr size_t kHeaderSize = 5;
+    constexpr size_t kRationalSize = 8;
+    constexpr size_t kGammaIndex = 4;
+    const uint8_t validData[] = {
+            0x00, 0x00,                                      // Minimum version
+            0x00, 0x00,                                      // Writer version
+            0x00,                                            // Flags
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,  // Base HDR headroom
+            0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,  // Altr HDR headroom
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,  // Gainmap min
+            0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,  // Gainmap max
+            0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,  // Gamma
+            0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x40,  // Base offset
+            0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x40,  // Altr offset
+    };
+    constexpr size_t kRationalCount = (sizeof(validData) - kHeaderSize) / kRationalSize;
+
+    // Returns whether `validData` parses after zeroing the 4 bytes at `offset`.
+    auto parsesWithZeroedBytesAt = [&](size_t offset) {
+        sk_sp<SkData> data = SkData::MakeWithCopy(validData, sizeof(validData));
+        memset(static_cast<uint8_t*>(data->writable_data()) + offset, 0, 4);
+        SkGainmapInfo info;
+        return SkGainmapInfo::Parse(data.get(), info);
+    };
+
+    SkGainmapInfo info;
+    REPORTER_ASSERT(r,
+                    SkGainmapInfo::Parse(
+                            SkData::MakeWithoutCopy(validData, sizeof(validData)).get(), info));
+
+    // Zero denominators are invalid.
+    for (size_t i = 0; i < kRationalCount; ++i) {
+        REPORTER_ASSERT(r,
+                        !parsesWithZeroedBytesAt(kHeaderSize + i * kRationalSize + 4),
+                        "rational %zu",
+                        i);
+    }
+
+    // A zero gamma is invalid, since `fGainmapGamma` is its reciprocal.
+    REPORTER_ASSERT(r, !parsesWithZeroedBytesAt(kHeaderSize + kGammaIndex * kRationalSize));
+}

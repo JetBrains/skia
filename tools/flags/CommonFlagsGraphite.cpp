@@ -8,6 +8,7 @@
 #include "tools/flags/CommonFlagsGraphite.h"
 
 #include "include/core/SkExecutor.h"
+#include "src/core/SkExecutors.h"
 #include "tools/graphite/TestOptions.h"
 
 // Defined in CommonFlagsConfig
@@ -29,9 +30,12 @@ DEFINE_int(minMSAAPathSize, -1,
 DEFINE_bool(useDrawListLayer, false, "Enable experimental layer-based draw ordering.");
 
 void SetTestOptions(skiatest::graphite::TestOptions* testOptions) {
-    static std::unique_ptr<SkExecutor> gGpuExecutor =
-            (0 != FLAGS_gpuThreads) ? SkExecutor::MakeFIFOThreadPool(FLAGS_gpuThreads)
-                                    : nullptr;
+    static std::unique_ptr<SkExecutor> gGpuExecutor;
+    if (0 != FLAGS_gpuThreads) {
+        gGpuExecutor = SkExecutors::MakeMultiListFIFOThreadPool(/* numWorkLists= */ 2,
+                                                                FLAGS_gpuThreads,
+                                                                /* allowBorrowing= */false);
+    }
 
     testOptions->fContextOptions.fExecutor = gGpuExecutor.get();
 

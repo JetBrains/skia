@@ -25,8 +25,8 @@ public:
                                           SkMatrix* drawMatrix) = 0;
     };
 
-    SKPAnimationBench(const char* name, const SkPicture*, const SkIRect& devClip, sk_sp<Animation>,
-                      bool doLooping);
+    SKPAnimationBench(const char* name, const SkPicture*, const SkIRect& devClip,
+                      const SkISize& tileSize, sk_sp<Animation>, bool doLooping);
 
     static sk_sp<Animation> MakeZoomAnimation(SkScalar zoomMax, double zoomPeriodMs);
 
@@ -34,9 +34,6 @@ protected:
     const char* onGetUniqueName() override;
     void onPerCanvasPreDraw(SkCanvas* canvas) override;
 
-    void drawMPDPicture() override {
-        SK_ABORT("MPD not supported");
-    }
     void drawPicture() override;
 
 private:

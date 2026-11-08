@@ -23,6 +23,7 @@
 #include "include/private/chromium/GrDeferredDisplayListRecorder.h"
 #include "include/private/chromium/GrPromiseImageTexture.h"
 #include "include/private/chromium/SkImageChromium.h"
+#include "src/core/SkExecutors.h"
 #include "src/core/SkTaskGroup.h"
 #include "src/gpu/ganesh/image/SkImage_Ganesh.h"
 #include "tools/ganesh/GrContextFactory.h"
@@ -114,9 +115,10 @@ private:
     AutoTArray<PromiseImageInfo> fPromiseImages{kPromiseImageCount};
     sk_sp<SkSurface> fSurface;
     GrSurfaceCharacterization fSurfaceCharacterization;
-    std::unique_ptr<SkExecutor> fGpuExecutor = SkExecutor::MakeFIFOThreadPool(1, false);
+    std::unique_ptr<SkExecutor> fGpuExecutor =
+        SkExecutors::MakeFIFOThreadPool(1, /* allowBorrowing= */ false);
     std::unique_ptr<SkExecutor> fRecordingExecutor =
-        SkExecutor::MakeFIFOThreadPool(kRecordingThreadCount, false);
+        SkExecutors::MakeFIFOThreadPool(kRecordingThreadCount, /* allowBorrowing= */ false);
     SkTaskGroup fGpuTaskGroup{*fGpuExecutor};
     SkTaskGroup fRecordingTaskGroup{*fRecordingExecutor};
     SkThreadID fGpuThread = kIllegalThreadID;
@@ -278,7 +280,9 @@ void DDLFuzzer::run() {
     if (!fSurface) {
         return;
     }
-    fRecordingTaskGroup.batch(kIterationCount, [this](int i) { this->recordAndPlayDDL(); });
+    for (int i = 0; i < kIterationCount; i++) {
+        fRecordingTaskGroup.add([this]() { this->recordAndPlayDDL(); });
+    }
     fRecordingTaskGroup.wait();
 
     fGpuTaskGroup.add([this] { fContext->flushAndSubmit(fSurface.get(), GrSyncCpu::kYes); });

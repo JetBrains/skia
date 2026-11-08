@@ -17,26 +17,87 @@ RenderStep::RenderStep(Layout layout,
                        SkEnumBitMask<Flags> flags,
                        std::initializer_list<Uniform> uniforms,
                        PrimitiveType primitiveType,
-                       DepthStencilSettings depthStencilSettings,
+                       StencilSettings stencilSettings,
                        SkSpan<const Attribute> staticAttrs,
                        SkSpan<const Attribute> appendAttrs,
+                       SkSpan<const Uniform> storageUniforms,
                        SkSpan<const Varying> varyings)
         : fRenderStepID(renderStepID)
         , fFlags(flags)
+        , fStorageBufferStages(
+                  (SkToBool(flags & Flags::kVsUsesStorage) ? PipelineStageFlags::kVertexShader
+                                                           : PipelineStageFlags{}) |
+                  (SkToBool(flags & Flags::kFsUsesStorage) ? PipelineStageFlags::kFragmentShader
+                                                           : PipelineStageFlags{}))
         , fPrimitiveType(primitiveType)
-        , fDepthStencilSettings(depthStencilSettings)
         , fUniforms(uniforms)
         , fStaticAttrs(staticAttrs.begin(), staticAttrs.end())
         , fAppendAttrs(appendAttrs.begin(), appendAttrs.end())
+        , fStorageUniforms(storageUniforms.begin(), storageUniforms.end())
         , fVaryings(varyings.begin(), varyings.end())
         , fUniformAlignment(0)
         , fStaticDataStride(0)
-        , fAppendDataStride(0) {
+        , fAppendDataStride(0)
+        , fStorageUniformStride(0)
+        , fStorageUniformAlignment(1) {
+    // If declaring storage uniforms, the flags must specify their visibility
+    SkASSERT(fStorageUniforms.empty() ||
+             SkToBool(fStorageBufferStages & (PipelineStageFlags::kVertexShader |
+                                              PipelineStageFlags::kFragmentShader)));
+
+    // kAllowSelfIntersection and kNoSelfIntersection are mutually exclusive
+    SkASSERT(!(SkToBool(fFlags & Flags::kAllowsSelfIntersection) &&
+               SkToBool(fFlags & Flags::kNoSelfIntersections)));
+
+    // TODO(michaelludwig): Pull the depth settings out of RenderStep entirely as part of building
+    // the ShaderInfo's settings, combining flags with renderpass requirements. At that point,
+    // RenderStep can just store the stencil settings directly.
+    fDepthStencilSettings.second = stencilSettings;
+
+    // Ensure that the depth-related flags are consistent with the depth settings provided
+    if (this->requiresDepth()) {
+        // This mode requires the depth buffer to prevent double blending, so writes need to be
+        // enabled and the test needs to be LESS to fail subsequent pixel touches.
+        fDepthStencilSettings.first = {CompareOp::kLess, /*write=*/true};
+    } else if (this->useNonAAInnerFill()) {
+        // Currently, inner fill draws use the same z value as the main draw, so a render step
+        // opting into this feature needs to use LESS even if otherwise could use LEQUAL. This
+        // could be relaxed by changing how Device assigns z values but there's no pressing need.
+        // Opting into a non-aa inner fill does not require depth writes, since this step is being
+        // rendered after the inner fill (which would write depth).
+        // TODO(michaelludwig): But for now set depthWrite=true since there's no renderpass logic
+        // to detect when depth writes are necessary.
+        fDepthStencilSettings.first = {CompareOp::kLess, /*write=*/true};
+    } else {
+        // These flags have the same effective behavior, which is that the test is LEQUAL
+        // (either necessary to show self-intersections, or desired to highlight bugs that indicate
+        // a violation of kNoSelfIntersection). They do not mandate depth writes being enabled.
+        // TODO(michaelludwig): For now, also allow kLess to support scenarios where multiple
+        // recordDraws() depend on the Z value being the same; use presence of stencil to select
+        // LESS over LEQUAL.
+        // TODO(michaelludwig): But for now set depthWrite=true when we perform shading since there
+        // is no render pass detection logic yet.
+        fDepthStencilSettings.first = {stencilSettings.enabled() ? CompareOp::kLess
+                                                                 : CompareOp::kLEqual,
+                                       /*write=*/this->performsShading()};
+    }
+
     for (auto v : this->staticAttributes()) {
         fStaticDataStride += v.sizeAlign4();
     }
     for (auto i : this->appendAttributes()) {
         fAppendDataStride += i.sizeAlign4();
+    }
+
+    if (!fStorageUniforms.empty()) {
+        // Storage uniforms are backed by a storage buffer or emulated via a fallback texture.
+        // In both cases the struct layout follows Std430.
+        UniformOffsetCalculator calculator = UniformOffsetCalculator::ForStruct(Layout::kStd430);
+        for (const auto& u : fStorageUniforms) {
+            calculator.advanceOffset(u.type(), u.count());
+        }
+        fStorageUniformAlignment = calculator.requiredAlignment();
+        fStorageUniformStride = SkAlignTo<size_t>(calculator.size(), fStorageUniformAlignment);
     }
 
     UniformOffsetCalculator calculator = UniformOffsetCalculator::ForTopLevel(layout);

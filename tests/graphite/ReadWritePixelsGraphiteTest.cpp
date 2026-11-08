@@ -173,6 +173,7 @@ struct GraphiteReadPixelTestRules {
     bool fAllowUnpremulSrc = true;
     // Are reads that are overlapping but not contained by the src bounds expected to succeed?
     bool fUncontainedRectSucceeds = true;
+    skgpu::Origin fOrigin = skgpu::Origin::kTopLeft;
 };
 
 // Makes a src populated with the pixmap. The src should get its image info (or equivalent) from
@@ -306,27 +307,25 @@ static void graphite_read_pixels_test_driver(skiatest::Reporter* reporter,
             const bool lumConversion =
                     !(SkColorTypeChannelFlags(srcCT) & kGray_SkColorChannelFlag) &&
                     (SkColorTypeChannelFlags(readCT) & kGray_SkColorChannelFlag);
+            const bool srgbCTConversion = (srcCT == kSRGBA_8888_SkColorType ||
+                                           readCT == kSRGBA_8888_SkColorType);
             // A CS or luminance conversion allows a 3 value difference and otherwise a 2 value
             // difference. Note that sometimes read back on GPU can be lossy even when there no
             // conversion at all because GPU->CPU read may go to a lower bit depth format and then
             // be promoted back to the original type. For example, GL ES cannot read to 1010102, so
             // we go through 8888.
-            float numer = (lumConversion || csConversion) ? 3.f : 2.f;
+            float numer = (lumConversion || csConversion || srgbCTConversion) ? 3.f : 2.f;
             // Allow some extra tolerance if unpremuling.
             if (srcAT == kPremul_SkAlphaType && readAT == kUnpremul_SkAlphaType) {
                 numer += 1;
             }
             int rgbBits = std::min({min_rgb_channel_bits(readCT), min_rgb_channel_bits(srcCT), 8});
             float tol = numer / (1 << rgbBits);
-            float alphaTol = 0;
-            if (readAT != kOpaque_SkAlphaType && srcAT != kOpaque_SkAlphaType) {
-                // Alpha can also get squashed down to 8 bits going through an intermediate
-                // color format.
-                const int alphaBits = std::min({alpha_channel_bits(readCT),
-                                                alpha_channel_bits(srcCT),
-                                                8});
-                alphaTol = 2.f / (1 << alphaBits);
-            }
+            // ReadPixels operations may perform format, alpha, or color space conversions on the
+            // GPU, which can introduce small floating-point differences. Expect a small diff in
+            // both RGB and alpha.
+            int alphaBits = std::min({alpha_channel_bits(readCT), alpha_channel_bits(srcCT), 8});
+            float alphaTol = (alphaBits == 0) ? tol : (numer / (1 << alphaBits));
 
             const float tols[4] = {tol, tol, tol, alphaTol};
             auto error = std::function<ComparePixmapsErrorReporter>([&](int x, int y,
@@ -345,6 +344,12 @@ static void graphite_read_pixels_test_driver(skiatest::Reporter* reporter,
             SkAutoPixmapStorage ref;
             SkImageInfo refInfo = readInfo.makeDimensions(dstWriteRect.size());
             ref.alloc(refInfo);
+            // Since the texture is uploaded as if it's top left, we flip the
+            // ref pixels if the origin is bottom left so the following comparison
+            // works identically regardless of the origin.
+            const bool flipY = (rules.fOrigin == skgpu::Origin::kBottomLeft);
+            const int srcReadY = flipY ? (srcPixels.height() - srcReadRect.bottom())
+                                       : srcReadRect.y();
             if (readAT == kUnknown_SkAlphaType) {
                 // Do a spoofed read where src and dst alpha type are both kUnpremul. This will
                 // allow SkPixmap readPixels to succeed and won't do any alpha type conversion.
@@ -355,9 +360,16 @@ static void graphite_read_pixels_test_driver(skiatest::Reporter* reporter,
                                      srcPixels.addr(),
                                      srcPixels.rowBytes());
 
-                unpremulSrc.readPixels(unpremulRef, srcReadRect.x(), srcReadRect.y());
+                unpremulSrc.readPixels(unpremulRef, srcReadRect.x(), srcReadY);
             } else {
-                srcPixels.readPixels(ref, srcReadRect.x(), srcReadRect.y());
+                srcPixels.readPixels(ref, srcReadRect.x(), srcReadY);
+            }
+            if (flipY) {
+                for (int y = 0; y < ref.height() / 2; ++y) {
+                    char* r1 = static_cast<char*>(ref.writable_addr(0, y));
+                    char* r2 = static_cast<char*>(ref.writable_addr(0, ref.height() - 1 - y));
+                    std::swap_ranges(r1, r1 + ref.rowBytes(), r2);
+                }
             }
             // This is the part of dstPixels that should have been updated.
             SkPixmap actual;
@@ -554,6 +566,14 @@ DEF_CONDITIONAL_GRAPHITE_TEST_FOR_RENDERING_CONTEXTS(ImageAsyncReadPixelsGraphit
     using Renderable = skgpu::Renderable;
     using TextureInfo = skgpu::graphite::TextureInfo;
 
+    if (context->supportsProtectedContent()) {
+        return;
+    }
+
+    // The test textures are small (16x16), so disable the CPU fallback to ensure
+    // the GPU conversion path is tested.
+    skgpu::graphite::ContextPriv::disableSmallSizeReadCPUFallback_ForTesting(true);
+
     auto reader = std::function<GraphiteReadSrcFn<Image>>([context, testContext](
                                                                   const Image& image,
                                                                   const SkIPoint& offset,
@@ -598,31 +618,40 @@ DEF_CONDITIONAL_GRAPHITE_TEST_FOR_RENDERING_CONTEXTS(ImageAsyncReadPixelsGraphit
     rules.fAllowUnpremulSrc = true;
     rules.fUncontainedRectSucceeds = false;
 
-    for (auto renderable : {Renderable::kNo, Renderable::kYes}) {
-        auto factory = std::function<GraphiteSrcFactory<Image>>([&](
-                skgpu::graphite::Recorder* recorder,
-                const SkPixmap& src) {
-            Image image = sk_gpu_test::MakeBackendTextureImage(recorder,
-                                                               src,
-                                                               Mipmapped::kNo,
-                                                               renderable,
-                                                               skgpu::Origin::kTopLeft,
-                                                               skgpu::Protected::kNo);
+    for (auto origin : {
+            skgpu::Origin::kTopLeft,
+#if !defined(SK_LEGACY_GRAPHITE_READ_PIXELS_BOTTOM_LEFT_BEHAVIOR)
+            skgpu::Origin::kBottomLeft,
+#endif
+    }) {
+        rules.fOrigin = origin;
+        for (auto renderable : {Renderable::kNo, Renderable::kYes}) {
+            auto factory = std::function<GraphiteSrcFactory<Image>>([&](
+                    skgpu::graphite::Recorder* recorder,
+                    const SkPixmap& src) {
+                Image image = sk_gpu_test::MakeBackendTextureImage(recorder,
+                                                                   src,
+                                                                   Mipmapped::kNo,
+                                                                   renderable,
+                                                                   origin,
+                                                                   skgpu::Protected::kNo);
 
-            std::unique_ptr<skgpu::graphite::Recording> recording = recorder->snap();
-            skgpu::graphite::InsertRecordingInfo recordingInfo;
-            recordingInfo.fRecording = recording.get();
-            context->insertRecording(recordingInfo);
+                std::unique_ptr<skgpu::graphite::Recording> recording = recorder->snap();
+                skgpu::graphite::InsertRecordingInfo recordingInfo;
+                recordingInfo.fRecording = recording.get();
+                context->insertRecording(recordingInfo);
 
-            return image;
-        });
-        auto label = SkStringPrintf("Renderable: %d", (int)renderable);
-        graphite_read_pixels_test_driver(reporter, context, rules, factory, reader, label);
+                return image;
+            });
+            auto label = SkStringPrintf("Renderable: %d, Origin: %d", (int)renderable, (int)origin);
+            graphite_read_pixels_test_driver(reporter, context, rules, factory, reader, label);
+        }
     }
 
     // It's possible that we've created an Image using the factory, but then don't try to do
     // readPixels on it, leaving a hanging command buffer. So we submit here to clean up.
     context->submit();
+    skgpu::graphite::ContextPriv::disableSmallSizeReadCPUFallback_ForTesting(false);
 }
 
 DEF_CONDITIONAL_GRAPHITE_TEST_FOR_RENDERING_CONTEXTS(SurfaceAsyncReadPixelsGraphite,
@@ -632,6 +661,10 @@ DEF_CONDITIONAL_GRAPHITE_TEST_FOR_RENDERING_CONTEXTS(SurfaceAsyncReadPixelsGraph
                                                      true,
                                                      CtsEnforcement::kApiLevel_202404) {
     using Surface = sk_sp<SkSurface>;
+
+    if (context->supportsProtectedContent()) {
+        return;
+    }
 
     auto reader = std::function<GraphiteReadSrcFn<Surface>>([context, testContext](
                                                                     const Surface& surface,
@@ -688,5 +721,220 @@ DEF_CONDITIONAL_GRAPHITE_TEST_FOR_RENDERING_CONTEXTS(SurfaceAsyncReadPixelsGraph
 
     // It's possible that we've created an Image using the factory, but then don't try to do
     // readPixels on it, leaving a hanging command buffer. So we submit here to clean up.
+    context->submit();
+}
+
+// Regression test for async readbacks of a sub-rect of a bottom-left-origin image when the
+// readback also rescales. The source image is 128x128 with a logical white top half and black
+// bottom half. For each origin we read back the top half, bottom half, and the four quadrants,
+// both without rescaling and with 2x/4x downscaling, via the RGBA, YUV420 and YUVA420 async
+// paths, and check that every row of the result has the expected color.
+DEF_CONDITIONAL_GRAPHITE_TEST_FOR_RENDERING_CONTEXTS(ImageAsyncRescaleReadPixelsOriginGraphite,
+                                                     reporter,
+                                                     context,
+                                                     testContext,
+                                                     true,
+                                                     CtsEnforcement::kNextRelease) {
+    using Renderable = skgpu::Renderable;
+
+    if (context->supportsProtectedContent()) {
+        return;
+    }
+
+    static constexpr int kW = 128;
+    static constexpr int kH = 128;
+    static constexpr int kHalfH = kH / 2;
+
+    enum class ReadType { kRGBA, kYUV420, kYUVA420 };
+    auto read_type_name = [](ReadType rt) {
+        switch (rt) {
+            case ReadType::kRGBA:    return "RGBA";
+            case ReadType::kYUV420:  return "YUV420";
+            case ReadType::kYUVA420: return "YUVA420";
+        }
+        SkUNREACHABLE;
+    };
+
+    // Rec601 limited range Y values for pure white and pure black.
+    static constexpr int kWhiteY = 235;
+    static constexpr int kBlackY = 16;
+    static constexpr int kTolerance = 2;
+
+    // Whether the given logical row of the source image is white (top half) or black (bottom
+    // half).
+    auto logical_row_is_white = [](int logicalY) { return logicalY < kHalfH; };
+
+    const SkImageInfo srcInfo = SkImageInfo::Make(kW, kH,
+                                                  kRGBA_8888_SkColorType,
+                                                  kPremul_SkAlphaType,
+                                                  SkColorSpace::MakeSRGB());
+
+    for (auto origin : {skgpu::Origin::kTopLeft, skgpu::Origin::kBottomLeft}) {
+        // Fill the texture memory so that the *logical* image is white on top and black on the
+        // bottom, regardless of origin. For bottom-left origin, memory row 0 is the logical
+        // bottom row, so memory rows [0, kHalfH) must be black and [kHalfH, kH) white.
+        SkAutoPixmapStorage srcPixels;
+        srcPixels.alloc(srcInfo);
+        for (int memY = 0; memY < kH; ++memY) {
+            const int logicalY = (origin == skgpu::Origin::kBottomLeft) ? (kH - 1 - memY) : memY;
+            const uint32_t color = logical_row_is_white(logicalY) ? 0xFFFFFFFF : 0xFF000000;
+            uint32_t* row = srcPixels.writable_addr32(0, memY);
+            std::fill_n(row, kW, color);
+        }
+
+        std::unique_ptr<skgpu::graphite::Recorder> recorder = context->makeRecorder();
+        sk_sp<SkImage> image = sk_gpu_test::MakeBackendTextureImage(recorder.get(),
+                                                                    srcPixels,
+                                                                    Mipmapped::kNo,
+                                                                    Renderable::kNo,
+                                                                    origin,
+                                                                    skgpu::Protected::kNo);
+        if (!image) {
+            ERRORF(reporter, "Failed to create backend texture image for origin %d", (int)origin);
+            continue;
+        }
+        {
+            std::unique_ptr<skgpu::graphite::Recording> recording = recorder->snap();
+            skgpu::graphite::InsertRecordingInfo recordingInfo;
+            recordingInfo.fRecording = recording.get();
+            context->insertRecording(recordingInfo);
+        }
+
+        const SkIRect srcRects[] = {
+                SkIRect::MakeXYWH(0, 0, kW, kHalfH),                    // top half
+                SkIRect::MakeXYWH(0, kHalfH, kW, kHalfH),               // bottom half
+                SkIRect::MakeXYWH(0, 0, kW / 2, kHalfH),                // top-left quadrant
+                SkIRect::MakeXYWH(kW / 2, 0, kW / 2, kHalfH),           // top-right quadrant
+                SkIRect::MakeXYWH(0, kHalfH, kW / 2, kHalfH),           // bottom-left quadrant
+                SkIRect::MakeXYWH(kW / 2, kHalfH, kW / 2, kHalfH),      // bottom-right quadrant
+                SkIRect::MakeXYWH(0, 0, kW, kH),                        // full image
+        };
+
+        for (const SkIRect& srcRect : srcRects) {
+            for (int downscale : {1, 2, 4}) {
+                const SkISize dstSize = {srcRect.width() / downscale,
+                                         srcRect.height() / downscale};
+                for (ReadType readType : {ReadType::kRGBA,
+                                          ReadType::kYUV420,
+                                          ReadType::kYUVA420}) {
+                    AsyncContext asyncContext;
+                    switch (readType) {
+                        case ReadType::kRGBA: {
+                            const SkImageInfo dstInfo = srcInfo.makeDimensions(dstSize);
+                            context->asyncRescaleAndReadPixels(
+                                    image.get(),
+                                    dstInfo,
+                                    srcRect,
+                                    SkImage::RescaleGamma::kSrc,
+                                    SkImage::RescaleMode::kRepeatedLinear,
+                                    async_callback,
+                                    &asyncContext);
+                            break;
+                        }
+                        case ReadType::kYUV420:
+                            context->asyncRescaleAndReadPixelsYUV420(
+                                    image.get(),
+                                    kRec601_Limited_SkYUVColorSpace,
+                                    /*dstColorSpace=*/nullptr,
+                                    srcRect,
+                                    dstSize,
+                                    SkImage::RescaleGamma::kSrc,
+                                    SkImage::RescaleMode::kRepeatedLinear,
+                                    async_callback,
+                                    &asyncContext);
+                            break;
+                        case ReadType::kYUVA420:
+                            context->asyncRescaleAndReadPixelsYUVA420(
+                                    image.get(),
+                                    kRec601_Limited_SkYUVColorSpace,
+                                    /*dstColorSpace=*/nullptr,
+                                    srcRect,
+                                    dstSize,
+                                    SkImage::RescaleGamma::kSrc,
+                                    SkImage::RescaleMode::kRepeatedLinear,
+                                    async_callback,
+                                    &asyncContext);
+                            break;
+                    }
+                    if (!asyncContext.fCalled) {
+                        context->submit();
+                    }
+                    while (!asyncContext.fCalled) {
+                        testContext->tick();
+                        context->checkAsyncWorkCompletion();
+                    }
+                    if (!asyncContext.fResult) {
+                        ERRORF(reporter,
+                               "%s read failed. Origin: %d, Rect [%d, %d, %d, %d], Dst %dx%d",
+                               read_type_name(readType), (int)origin,
+                               srcRect.fLeft, srcRect.fTop, srcRect.fRight, srcRect.fBottom,
+                               dstSize.width(), dstSize.height());
+                        continue;
+                    }
+
+                    // Only check the Y plane for YUV reads (plane 0); for RGBA plane 0 is the
+                    // whole image. Rows adjacent to the white/black boundary are skipped since
+                    // linear filtering may blend them.
+                    const SkIRect dstBounds = SkIRect::MakeSize(dstSize);
+                    const char* data = static_cast<const char*>(asyncContext.fResult->data(0));
+                    const size_t rowBytes = asyncContext.fResult->rowBytes(0);
+                    for (int dy = 0; dy < dstBounds.height(); ++dy) {
+                        // Map dst row back to the logical source row (center of the sampled
+                        // region) to figure out what color it should be.
+                        const int srcY = srcRect.fTop + dy * downscale + downscale / 2;
+                        const int srcYMin = srcRect.fTop + dy * downscale;
+                        const int srcYMax = srcYMin + downscale - 1;
+                        // Skip rows whose footprint straddles or touches the boundary.
+                        if (srcYMin <= kHalfH && srcYMax >= kHalfH - 1) {
+                            continue;
+                        }
+                        const bool expectWhite = logical_row_is_white(srcY);
+
+                        bool rowOk = true;
+                        int badX = -1;
+                        int actualValue = 0;
+                        for (int dx = 0; dx < dstBounds.width(); ++dx) {
+                            int value;
+                            if (readType == ReadType::kRGBA) {
+                                const uint32_t px = *reinterpret_cast<const uint32_t*>(
+                                        data + dy * rowBytes + dx * sizeof(uint32_t));
+                                // All of R, G, B should match; check R (lowest byte in
+                                // kRGBA_8888 memory order on little-endian).
+                                value = px & 0xFF;
+                            } else {
+                                value = static_cast<uint8_t>(data[dy * rowBytes + dx]);
+                            }
+                            int expected;
+                            if (readType == ReadType::kRGBA) {
+                                expected = expectWhite ? 255 : 0;
+                            } else {
+                                expected = expectWhite ? kWhiteY : kBlackY;
+                            }
+                            if (std::abs(value - expected) > kTolerance) {
+                                rowOk = false;
+                                badX = dx;
+                                actualValue = value;
+                                break;
+                            }
+                        }
+                        if (!rowOk) {
+                            ERRORF(reporter,
+                                   "%s read mismatch. Origin: %d, Rect [%d, %d, %d, %d], "
+                                   "Dst %dx%d, at (%d, %d): expected %s (logical src row %d), "
+                                   "got value %d",
+                                   read_type_name(readType), (int)origin,
+                                   srcRect.fLeft, srcRect.fTop, srcRect.fRight, srcRect.fBottom,
+                                   dstSize.width(), dstSize.height(),
+                                   badX, dy, expectWhite ? "white" : "black", srcY,
+                                   actualValue);
+                            // One error per read is enough.
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     context->submit();
 }

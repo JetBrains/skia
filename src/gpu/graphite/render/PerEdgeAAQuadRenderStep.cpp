@@ -198,11 +198,14 @@ static void write_vertex_buffer(VertexWriter writer) {
 PerEdgeAAQuadRenderStep::PerEdgeAAQuadRenderStep(Layout layout, StaticBufferManager* bufferManager)
         : RenderStep(layout,
                      RenderStepID::kPerEdgeAAQuad,
-                     Flags::kPerformsShading | Flags::kEmitsCoverage | Flags::kOutsetBoundsForAA |
-                     Flags::kUseNonAAInnerFill | Flags::kAppendInstances,
+                     Flags::kPerformsShading | Flags::kEmitsCoverage
+                                             | Flags::kOutsetBoundsForAA
+                                             | Flags::kUseNonAAInnerFill
+                                             | Flags::kNoSelfIntersections
+                                             | Flags::kAppendInstances,
                      /*uniforms=*/{},
                      PrimitiveType::kTriangleStrip,
-                     kDirectDepthLessPass,
+                     /*stencilSettings=*/{},
                      /*staticAttrs=*/{{
                              {"cornerID", VertexAttribType::kUInt, SkSLType::kUInt },
                              {"normal", VertexAttribType::kFloat2, SkSLType::kFloat2},
@@ -220,6 +223,7 @@ PerEdgeAAQuadRenderStep::PerEdgeAAQuadRenderStep(Layout layout, StaticBufferMana
                              {"mat0", VertexAttribType::kFloat3, SkSLType::kFloat3},
                              {"mat1", VertexAttribType::kFloat3, SkSLType::kFloat3},
                              {"mat2", VertexAttribType::kFloat3, SkSLType::kFloat3}}},
+                     /*storageUniforms=*/{},
                      /*varyings=*/{{
                              // Device-space distance to LTRB edges of quad.
                              {"edgeDistances", SkSLType::kFloat4}, // distance to LTRB edges
@@ -235,7 +239,7 @@ PerEdgeAAQuadRenderStep::PerEdgeAAQuadRenderStep(Layout layout, StaticBufferMana
 
 PerEdgeAAQuadRenderStep::~PerEdgeAAQuadRenderStep() {}
 
-std::string PerEdgeAAQuadRenderStep::vertexSkSL() const {
+std::string PerEdgeAAQuadRenderStep::vertexSkSL(const RootNodesInfo&) const {
     // Returns the body of a vertex function, which must define a float4 devPosition variable and
     // must write to an already-defined float2 stepLocalCoords variable.
     return "float4 devPosition = per_edge_aa_quad_vertex_fn("
@@ -257,6 +261,7 @@ const char* PerEdgeAAQuadRenderStep::fragmentCoverageSkSL() const {
 }
 
 void PerEdgeAAQuadRenderStep::writeVertices(DrawWriter* writer,
+                                           StorageContext* /*storageContext*/,
                                            const DrawParams& params,
                                            uint32_t ssboIndex) const {
     SkASSERT(params.geometry().isEdgeAAQuad());

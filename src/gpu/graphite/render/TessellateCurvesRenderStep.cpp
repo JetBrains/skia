@@ -11,6 +11,7 @@
 #include "include/core/SkPathTypes.h"
 #include "include/core/SkSpan.h"
 #include "include/private/SkAssert.h"
+#include "include/private/SkAttributes.h"
 #include "include/private/SkDebug.h"
 #include "include/private/SkEnumBitMask.h"
 #include "src/core/SkPathPriv.h"
@@ -77,6 +78,8 @@ static constexpr SkSpan<const Attribute> kAttributes[2] = {kAttributesWithCurveT
 
 }  // namespace
 
+// NOTE: This step doesn't perform shading and self-intersections are resolved by modifying the
+// stencil buffer, so Flags::kAllowSelfIntersection is added.
 TessellateCurvesRenderStep::TessellateCurvesRenderStep(Layout layout,
                                                        bool evenOdd,
                                                        bool infinitySupport,
@@ -84,19 +87,17 @@ TessellateCurvesRenderStep::TessellateCurvesRenderStep(Layout layout,
         : RenderStep(layout,
                      evenOdd ? RenderStepID::kTessellateCurves_EvenOdd
                              : RenderStepID::kTessellateCurves_Winding,
-                     Flags::kRequiresMSAA |
-                     Flags::kAppendDynamicInstances |
-                     Flags::kIgnoreInverseFill,
+                     Flags::kRequiresMSAA | Flags::kAppendDynamicInstances
+                                          | Flags::kIgnoreInverseFill
+                                          | Flags::kAllowsSelfIntersection,
                      /*uniforms=*/{{"localToDevice", SkSLType::kFloat4x4}},
                      PrimitiveType::kTriangles,
                      evenOdd ? kEvenOddStencilPass : kWindingStencilPass,
                      /*staticAttrs=*/{{{"resolveLevel_and_idx",
-                                       VertexAttribType::kFloat2, SkSLType::kFloat2}}},
-                     /*appendAttrs=*/kAttributes[infinitySupport])
+                                        VertexAttribType::kFloat2, SkSLType::kFloat2}}},
+                     /*appendAttrs=*/SK_UNSAFE_TODO(kAttributes[infinitySupport]),
+                     /*storageUniforms=*/{})
         , fInfinitySupport(infinitySupport) {
-    SkASSERT(this->appendDataStride() ==
-             PatchStride(infinitySupport ? kAttribs : kAttribsWithCurveType));
-
     // Initialize the static buffers we'll use when recording draw calls.
     // NOTE: Each instance of this RenderStep gets its own copy of the data. If this ends up causing
     // problems, we can modify StaticBufferManager to de-duplicate requests.
@@ -117,7 +118,7 @@ TessellateCurvesRenderStep::TessellateCurvesRenderStep(Layout layout,
 
 TessellateCurvesRenderStep::~TessellateCurvesRenderStep() {}
 
-std::string TessellateCurvesRenderStep::vertexSkSL() const {
+std::string TessellateCurvesRenderStep::vertexSkSL(const RootNodesInfo&) const {
     return SkSL::String::printf(
             // TODO: Approximate perspective scaling to match how PatchWriter is configured (or
             // provide explicit tessellation level in instance data instead of replicating
@@ -132,8 +133,12 @@ std::string TessellateCurvesRenderStep::vertexSkSL() const {
 }
 
 void TessellateCurvesRenderStep::writeVertices(DrawWriter* dw,
+                                               StorageContext* /*storageContext*/,
                                                const DrawParams& params,
                                                uint32_t ssboIndex) const {
+    SkASSERT(this->appendDataStride(params) ==
+             PatchStride(fInfinitySupport ? kAttribs : kAttribsWithCurveType));
+
     SkPath path = params.geometry().shape().asPath(); // TODO: Iterate the Shape directly
 
     int patchReserveCount = FixedCountCurves::PreallocCount(path.countVerbs());

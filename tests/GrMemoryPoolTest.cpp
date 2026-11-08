@@ -5,6 +5,7 @@
  * found in the LICENSE file.
  */
 
+#include "include/private/SkMalloc.h"
 #include "include/private/SkTArray.h"
 #include "include/private/SkTDArray.h"
 #include "src/core/SkRandom.h"
@@ -34,7 +35,7 @@ public:
 
     void* operator new(size_t size) {
         if (!gPool) {
-            return ::operator new(size);
+            return sk_malloc_throw(size);
         } else {
             return gPool->allocate(size);
         }
@@ -42,7 +43,7 @@ public:
 
     void operator delete(void* p) {
         if (!gPool) {
-            ::operator delete(p);
+            sk_free(p);
         } else {
             return gPool->release(p);
         }
@@ -150,7 +151,7 @@ public:
         return ok && this->INHERITED::checkValues(v);
     }
 private:
-    int   fIntArray[20];
+    std::array<int, 20> fIntArray;
 
     using INHERITED = A;
 };
@@ -180,17 +181,17 @@ struct Rec {
 
 DEF_TEST(GrMemoryPool, reporter) {
     // prealloc and min alloc sizes for the pool
-    static const size_t gSizes[][2] = {
-        {0, 0},
-        {10 * sizeof(A), 20 * sizeof(A)},
-        {100 * sizeof(A), 100 * sizeof(A)},
-        {500 * sizeof(A), 500 * sizeof(A)},
-        {10000 * sizeof(A), 0},
-        {1, 100 * sizeof(A)},
-    };
+    static const auto gSizes = std::to_array<std::array<const size_t, 2>>({
+            {0, 0},
+            {10 * sizeof(A), 20 * sizeof(A)},
+            {100 * sizeof(A), 100 * sizeof(A)},
+            {500 * sizeof(A), 500 * sizeof(A)},
+            {10000 * sizeof(A), 0},
+            {1, 100 * sizeof(A)},
+    });
 
     // different percentages of creation vs deletion
-    static const float gCreateFraction[] = {1.f, .95f, 0.75f, .5f};
+    static constexpr auto gCreateFraction = std::to_array<float>({1.f, .95f, 0.75f, .5f});
     // number of create/destroys per test
     static const int kNumIters = 20000;
     // check that all the values stored in A objects are correct after this

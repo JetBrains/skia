@@ -54,7 +54,9 @@
 #include "include/codec/SkIcoDecoder.h"
 #endif
 
-#if defined(SK_CODEC_DECODES_JPEG)
+#if defined(SK_CODEC_DECODES_JPEG_WITH_RUST)
+#include "experimental/rust_jpeg/decoder/SkJpegRustDecoder.h"
+#elif defined(SK_CODEC_DECODES_JPEG)
 #include "include/codec/SkJpegDecoder.h"
 #endif
 
@@ -95,7 +97,9 @@ static std::vector<Decoder>* get_decoders_for_editing() {
 #elif defined(SK_CODEC_DECODES_PNG_WITH_RUST)
             decoders->push_back(SkPngRustDecoder::Decoder());
 #endif
-#if defined(SK_CODEC_DECODES_JPEG)
+#if defined(SK_CODEC_DECODES_JPEG_WITH_RUST)
+            decoders->push_back(SkJpegRustDecoder::Decoder());
+#elif defined(SK_CODEC_DECODES_JPEG)
             decoders->push_back(SkJpegDecoder::Decoder());
 #endif
 #if defined(SK_CODEC_DECODES_WEBP)
@@ -643,6 +647,7 @@ SkCodec::Result SkCodec::startIncrementalDecode(const SkImageInfo& info, void* p
             }
         }
     }
+    fDecodeBudget = options->fMaxDecodeMemory ? options->fMaxDecodeMemory : SIZE_MAX;
 
     const Result frameIndexResult = this->handleFrameIndex(info, pixels, rowBytes,
                                                            *options);
@@ -661,7 +666,6 @@ SkCodec::Result SkCodec::startIncrementalDecode(const SkImageInfo& info, void* p
     if (kSuccess == result) {
         fStartedIncrementalDecode = true;
     }
-    SkASSERT(result != kUnimplemented);
     return result;
 }
 

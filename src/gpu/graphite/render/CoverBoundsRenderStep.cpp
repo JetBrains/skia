@@ -23,31 +23,46 @@
 #include "src/gpu/graphite/geom/Rect.h"
 #include "src/gpu/graphite/geom/Shape.h"
 #include "src/gpu/graphite/geom/Transform.h"
+#include "src/gpu/graphite/render/CommonDepthStencilSettings.h"
 
 namespace skgpu::graphite {
 
 CoverBoundsRenderStep::CoverBoundsRenderStep(Layout layout,
                                              RenderStep::RenderStepID renderStepID,
-                                             DepthStencilSettings dsSettings)
+                                             StencilSettings stencilSettings)
         : RenderStep(layout,
                      renderStepID,
-                     Flags::kPerformsShading |
-                     Flags::kAppendInstances |
-                     Flags::kInverseFillsScissor,
+                     Flags::kPerformsShading | Flags::kNoSelfIntersections
+                                             | Flags::kAppendInstances
+                                             | Flags::kInverseFillsScissor,
                      /*uniforms=*/{},
                      PrimitiveType::kTriangleStrip,
-                     dsSettings,
+                     stencilSettings,
                      /*staticAttrs=*/ {},
                      /*appendAttrs=*/{{{"bounds", VertexAttribType::kFloat4, SkSLType::kFloat4},
-                                      {"depth", VertexAttribType::kFloat, SkSLType::kFloat},
-                                      {"ssboIndex", VertexAttribType::kUInt, SkSLType::kUInt},
-                                      {"mat0", VertexAttribType::kFloat3, SkSLType::kFloat3},
-                                      {"mat1", VertexAttribType::kFloat3, SkSLType::kFloat3},
-                                      {"mat2", VertexAttribType::kFloat3, SkSLType::kFloat3}}}) {}
+                                       {"depth", VertexAttribType::kFloat, SkSLType::kFloat},
+                                       {"ssboIndex", VertexAttribType::kUInt, SkSLType::kUInt},
+                                       {"mat0", VertexAttribType::kFloat3, SkSLType::kFloat3},
+                                       {"mat1", VertexAttribType::kFloat3, SkSLType::kFloat3},
+                                       {"mat2", VertexAttribType::kFloat3, SkSLType::kFloat3}}},
+                     /*storageUniforms=*/{}) {}
 
 CoverBoundsRenderStep::~CoverBoundsRenderStep() {}
 
-std::string CoverBoundsRenderStep::vertexSkSL() const {
+std::unique_ptr<CoverBoundsRenderStep> CoverBoundsRenderStep::NonAAInnerFill(Layout layout) {
+    return std::unique_ptr<CoverBoundsRenderStep>(new CoverBoundsRenderStep(
+            layout, RenderStepID::kCoverBounds_NonAAFill, /*stencilSettings=*/{}));
+}
+
+std::unique_ptr<CoverBoundsRenderStep> CoverBoundsRenderStep::StencilCover(
+        Layout layout, bool inverseFill) {
+    RenderStepID id = inverseFill ? RenderStepID::kCoverBounds_InverseCover
+                                  : RenderStepID::kCoverBounds_RegularCover;
+    StencilSettings stencil = inverseFill ? kInverseCoverPass : kRegularCoverPass;
+    return std::unique_ptr<CoverBoundsRenderStep>(new CoverBoundsRenderStep(layout, id, stencil));
+}
+
+std::string CoverBoundsRenderStep::vertexSkSL(const RootNodesInfo&) const {
     // Returns the body of a vertex function, which must define a float4 devPosition variable and
     // must write to an already-defined float2 stepLocalCoords variable.
     return "float4 devPosition = cover_bounds_vertex_fn("
@@ -57,6 +72,7 @@ std::string CoverBoundsRenderStep::vertexSkSL() const {
 }
 
 void CoverBoundsRenderStep::writeVertices(DrawWriter* writer,
+                                          StorageContext* /*storageContext*/,
                                           const DrawParams& params,
                                           uint32_t ssboIndex) const {
     // Each instance is 4 vertices, forming 2 triangles from a single triangle strip, so no indices

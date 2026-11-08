@@ -1821,8 +1821,8 @@ Result GaneshPrecompileTestingSink::draw(const Src& src, SkBitmap* dst, SkWStrea
 /*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
 GPUDDLSink::GPUDDLSink(const SkCommandLineConfigGpu* config, const GrContextOptions& ctxOptions)
         : INHERITED(config, ctxOptions)
-        , fRecordingExecutor(SkExecutor::MakeLIFOThreadPool(1))
-        , fGPUExecutor(SkExecutor::MakeFIFOThreadPool(1, false)) {
+        , fRecordingExecutor(SkExecutors::MakeLIFOThreadPool(1))
+        , fGPUExecutor(SkExecutors::MakeFIFOThreadPool(1, /* allowBorrowing= */ false)) {
 }
 
 Result GPUDDLSink::ddlDraw(const Src& src,
@@ -2383,6 +2383,7 @@ Result GraphitePrecompileTestingSink::drawSrc(
 }
 
 Result GraphitePrecompileTestingSink::resetAndRecreatePipelines(
+        skgpu::graphite::Context* context,
         skgpu::graphite::PrecompileContext* precompileContext) const {
     using namespace skgpu::graphite;
 
@@ -2411,6 +2412,9 @@ Result GraphitePrecompileTestingSink::resetAndRecreatePipelines(
         bool result = precompileContext->precompile(d);
         SkAssertResult(result);
     }
+
+    // We need to explicitly wait for the precompilation to finish here
+    context->priv().sharedContext()->pipelineManager()->wait_TestOnly();
 
     int postRecreate = globalCache->numGraphicsPipelines();
 
@@ -2553,7 +2557,7 @@ Result GraphitePrecompileTestingSink::draw(const Src& src,
 
         // Call resetAndRecreatePipelines to clear out all the Pipelines in the global cache and
         // then regenerate them using the Precompilation system.
-        result = this->resetAndRecreatePipelines(precompileContext.get());
+        result = this->resetAndRecreatePipelines(context, precompileContext.get());
         if (!result.isOk()) {
             return result;
         }

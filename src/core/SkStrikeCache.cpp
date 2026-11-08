@@ -10,6 +10,7 @@
 #include "include/core/SkGraphics.h"
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkTraceMemoryDump.h"
+#include "include/private/SkAPI.h"
 #include "include/private/SkAssert.h"
 #include "include/private/SkDebug.h"
 #include "include/private/SkMutex.h"
@@ -25,15 +26,14 @@ struct SkFontMetrics;
 
 using namespace sktext;
 
-bool gSkUseThreadLocalStrikeCaches_IAcknowledgeThisIsIncrediblyExperimental = false;
-
 SkStrikeCache* SkStrikeCache::GlobalStrikeCache() {
-    if (gSkUseThreadLocalStrikeCaches_IAcknowledgeThisIsIncrediblyExperimental) {
-        static thread_local auto* cache = new SkStrikeCache;
-        return cache;
-    }
+#if defined(SK_ENABLE_THREADLOCAL_STRIKECACHE)
+    static thread_local auto* cache = new SkStrikeCache;
+    return cache;
+#else
     static auto* cache = new SkStrikeCache;
     return cache;
+#endif
 }
 
 auto SkStrikeCache::findOrCreateStrike(const SkStrikeSpec& strikeSpec) -> sk_sp<SkStrike> {

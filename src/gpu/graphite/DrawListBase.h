@@ -9,6 +9,7 @@
 
 #include "include/gpu/graphite/GraphiteTypes.h"
 
+#include "include/private/SkAttributes.h"
 #include "include/private/SkDebug.h"
 #include "include/private/SkEnumBitMask.h"
 #include "src/core/SkBlockAllocator.h"
@@ -19,6 +20,7 @@
 #include "src/gpu/graphite/DrawParams.h"
 #include "src/gpu/graphite/PaintParams.h"
 #include "src/gpu/graphite/PipelineData.h"
+#include "src/gpu/graphite/StorageContext.h"
 #include "src/gpu/graphite/geom/Rect.h"
 #include "src/gpu/graphite/geom/Transform.h"
 
@@ -30,10 +32,11 @@
 
 namespace skgpu::graphite {
 
+class DrawContext;
 class DrawPass;
 class Geometry;
-class Renderer;
 class Recorder;
+class Renderer;
 
 struct Layer;
 
@@ -61,10 +64,14 @@ public:
             SkEnumBitMask<DstUsage> dstUsage,
             BarrierType barrierBeforeDraws,
             PipelineDataGatherer* gatherer,
+            StorageContext* storageContext,
             const StrokeStyle* stroke,
             Layer* latestInsertion) = 0;
 
+
     virtual std::unique_ptr<DrawPass> snapDrawPass(Recorder* recorder,
+                                                   StorageContext* storageContext,
+                                                   DrawContext* drawContext,
                                                    sk_sp<TextureProxy> target,
                                                    const SkImageInfo& targetInfo,
                                                    const DstReadStrategy dstReadStrategy) = 0;
@@ -116,8 +123,8 @@ protected:
     // the DrawListLayer's arena allocator.
     SkTBlockList<Transform, 4> fTransforms{SkBlockAllocator::GrowthPolicy::kFibonacci};
 
-    UniformDataCache fUniformDataCache;
-    TextureDataCache fTextureDataCache;
+    UniformDataCache      fUniformDataCache;
+    TextureDataCache      fTextureDataCache;
     GraphicsPipelineCache fPipelineCache;
 
     int fRenderStepCount = 0;
@@ -266,8 +273,8 @@ protected:
 
             for (int i = 0; i < binding.numTextures(); ++i) {
                 auto [t, s] = binding.texture(i);
-                textures[i] = t.get();
-                samplers[i] = s;
+                SK_UNSAFE_TODO(textures[i]) = t.get();
+                SK_UNSAFE_TODO(samplers[i]) = s;
             }
         }
 

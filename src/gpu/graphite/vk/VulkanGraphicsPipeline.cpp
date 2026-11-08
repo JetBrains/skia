@@ -246,44 +246,51 @@ static VkCompareOp compare_op_to_vk_compare_op(CompareOp op) {
 }
 
 static void setup_stencil_op_state(VkStencilOpState* opState,
-                                   const DepthStencilSettings::Face& face,
-                                   uint32_t referenceValue) {
+                                   const StencilSettings::Face& face,
+                                   uint32_t referenceValue,
+                                   uint32_t readMask,
+                                   uint32_t writeMask) {
     opState->failOp = stencil_op_to_vk_stencil_op(face.fStencilFailOp);
     opState->passOp = stencil_op_to_vk_stencil_op(face.fDepthStencilPassOp);
     opState->depthFailOp = stencil_op_to_vk_stencil_op(face.fDepthFailOp);
     opState->compareOp = compare_op_to_vk_compare_op(face.fCompareOp);
-    opState->compareMask = face.fReadMask;
+    opState->compareMask = readMask;
     // Note: On some old ARM driver versions, dynamic state for stencil write mask doesn't work
     // correctly in the presence of discard or alpha to coverage, if the static state provided
     // when creating the pipeline has a value of 0.  However, both alphaToCoverageEnable and
     // rasterizerDiscardEnable are always false in Graphite, so no driver bug workaround is
     // necessary at the moment.
-    opState->writeMask = face.fWriteMask;
+    opState->writeMask = writeMask;
     opState->reference = referenceValue;
 }
 
 static void setup_depth_stencil_state(const Caps& caps,
-                                      const DepthStencilSettings& stencilSettings,
+                                      const DepthStencilSettings& depthStencilSettings,
                                       VkPipelineDepthStencilStateCreateInfo* stencilInfo) {
-    SkASSERT(stencilSettings.fDepthTestEnabled ||
-             stencilSettings.fDepthCompareOp == CompareOp::kAlways);
-
     *stencilInfo = {};
     stencilInfo->sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
     if (!caps.useBasicDynamicState()) {
-        stencilInfo->depthTestEnable = stencilSettings.fDepthTestEnabled;
-        stencilInfo->depthWriteEnable = stencilSettings.fDepthWriteEnabled;
-        stencilInfo->depthCompareOp = compare_op_to_vk_compare_op(stencilSettings.fDepthCompareOp);
-        stencilInfo->depthBoundsTestEnable = VK_FALSE;
-        stencilInfo->stencilTestEnable = stencilSettings.fStencilTestEnabled;
-        if (stencilSettings.fStencilTestEnabled) {
+        const auto& [depthSettings, stencilSettings] = depthStencilSettings;
+
+        stencilInfo->depthTestEnable = depthSettings.enabled();
+        stencilInfo->depthWriteEnable = depthSettings.fWriteEnabled;
+        stencilInfo->depthCompareOp = compare_op_to_vk_compare_op(depthSettings.fCompareOp);
+
+        stencilInfo->stencilTestEnable = stencilSettings.enabled();
+        if (stencilInfo->stencilTestEnable) {
             setup_stencil_op_state(&stencilInfo->front,
-                                   stencilSettings.fFrontStencil,
-                                   stencilSettings.fStencilReferenceValue);
+                                   stencilSettings.fFrontFace,
+                                   stencilSettings.fReferenceValue,
+                                   stencilSettings.fReadMask,
+                                   stencilSettings.fWriteMask);
             setup_stencil_op_state(&stencilInfo->back,
-                                   stencilSettings.fBackStencil,
-                                   stencilSettings.fStencilReferenceValue);
+                                   stencilSettings.fBackFace,
+                                   stencilSettings.fReferenceValue,
+                                   stencilSettings.fReadMask,
+                                   stencilSettings.fWriteMask);
         }
+
+        stencilInfo->depthBoundsTestEnable = VK_FALSE;
         stencilInfo->minDepthBounds = 0.0f;
         stencilInfo->maxDepthBounds = 1.0f;
     }
@@ -501,7 +508,7 @@ static bool input_attachment_desc_set_layout(VkDescriptorSetLayout& outLayout,
     skia_private::STArray<1, DescriptorData> inputAttachmentDesc;
 
     if (!mockOnly) {
-        inputAttachmentDesc.push_back(VulkanGraphicsPipeline::kInputAttachmentDescriptor);
+        inputAttachmentDesc.push_back(VulkanGraphicsPipeline::GetInputAttachmentDescriptor());
     }
 
     // If mockOnly is true (meaning no input attachment descriptor is actually needed), then still
@@ -513,27 +520,28 @@ static bool input_attachment_desc_set_layout(VkDescriptorSetLayout& outLayout,
 static bool uniform_desc_set_layout(VkDescriptorSetLayout& outLayout,
                                     const VulkanSharedContext* sharedContext,
                                     bool hasCombinedUniforms,
-                                    bool hasGradientBuffer) {
+                                    SkEnumBitMask<PipelineStageFlags> storageStageFlags) {
     // Define a container with size reserved for up to kMaxNumUniformBuffers descriptors. Only add
     // DescriptorData for uniforms that actually are used and need to be included in the layout.
     skia_private::STArray<
             VulkanGraphicsPipeline::kMaxNumUniformBuffers, DescriptorData> uniformDescriptors;
 
     DescriptorType uniformBufferType =
-            sharedContext->caps()->storageBufferSupport() ? DescriptorType::kStorageBuffer
-                                                          : DescriptorType::kUniformBuffer;
+            sharedContext->caps()->storageBufferSupport() ? DescriptorType::kStorageBufferDynamic
+                                                          : DescriptorType::kUniformBufferDynamic;
     if (hasCombinedUniforms) {
         uniformDescriptors.push_back({
                 uniformBufferType, /*count=*/1,
                 VulkanGraphicsPipeline::kCombinedUniformIndex,
                 PipelineStageFlags::kVertexShader | PipelineStageFlags::kFragmentShader});
     }
-    if (hasGradientBuffer) {
+
+    if (SkToBool(storageStageFlags)) {
         uniformDescriptors.push_back({
-                DescriptorType::kStorageBuffer,
+                DescriptorType::kStorageBufferDynamic,
                 /*count=*/1,
-                VulkanGraphicsPipeline::kGradientBufferIndex,
-                PipelineStageFlags::kFragmentShader});
+                VulkanGraphicsPipeline::kStorageBufferIndex,
+                storageStageFlags});
     }
 
     // If no uniforms are used, still request a mock VkDescriptorSetLayout handle by passing in the
@@ -576,7 +584,7 @@ static VkPipelineLayout setup_pipeline_layout(const VulkanSharedContext* sharedC
                                               uint32_t pushConstantSize,
                                               VkShaderStageFlagBits pushConstantPipelineStageFlags,
                                               bool hasCombinedUniforms,
-                                              bool hasGradientBuffer,
+                                              SkEnumBitMask<PipelineStageFlags> storageStageFlags,
                                               int numTextureSamplers,
                                               bool loadMsaaFromResolve,
                                               SkSpan<sk_sp<VulkanSampler>> immutableSamplers) {
@@ -602,7 +610,7 @@ static VkPipelineLayout setup_pipeline_layout(const VulkanSharedContext* sharedC
                 setLayouts[VulkanGraphicsPipeline::kUniformBufferDescSetIndex],
                 sharedContext,
                 hasCombinedUniforms,
-                hasGradientBuffer) ||
+                storageStageFlags) ||
         !texture_sampler_desc_set_layout(
                 setLayouts[VulkanGraphicsPipeline::kTextureBindDescSetIndex],
                 sharedContext,
@@ -719,6 +727,12 @@ static bool create_shaders_pipeline(VulkanSharedContext* sharedContext,
     shadersPipelineCreateInfo.renderPass = completePipelineInfo.renderPass;
     shadersPipelineCreateInfo.subpass = completePipelineInfo.subpass;
 
+    if (sharedContext->vulkanCaps().supportsPipelineProtectedAccess()) {
+        shadersPipelineCreateInfo.flags |= sharedContext->caps()->protectedSupport()
+                                            ? VK_PIPELINE_CREATE_PROTECTED_ACCESS_ONLY_BIT_EXT
+                                            : VK_PIPELINE_CREATE_NO_PROTECTED_ACCESS_BIT_EXT;
+    }
+
     // Specify that this is the shaders subset of the pipeline.
     libraryInfo.flags = VK_GRAPHICS_PIPELINE_LIBRARY_PRE_RASTERIZATION_SHADERS_BIT_EXT |
                         VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_SHADER_BIT_EXT;
@@ -826,11 +840,18 @@ VulkanProgramInfo::~VulkanProgramInfo() {
     }
     if (fLayout != VK_NULL_HANDLE) {
         VULKAN_CALL(fSharedContext->interface(),
-                    DestroyPipelineLayout(fSharedContext->device(),
-                                          fLayout,
-                                          nullptr));
+                    DestroyPipelineLayout(fSharedContext->device(), fLayout, nullptr));
         fLayout = VK_NULL_HANDLE;
     }
+}
+
+const DescriptorData& VulkanGraphicsPipeline::GetInputAttachmentDescriptor() {
+    static const DescriptorData descriptor = {
+            DescriptorType::kInputAttachment,
+            /*count=*/1,
+            /*bindingIdx=*/0,  // We only expect to encounter one input attachment
+            PipelineStageFlags::kFragmentShader};
+    return descriptor;
 }
 
 sk_sp<VulkanGraphicsPipeline> VulkanGraphicsPipeline::Make(
@@ -852,12 +873,6 @@ sk_sp<VulkanGraphicsPipeline> VulkanGraphicsPipeline::Make(
 
     const RenderStep* step = sharedContext->rendererProvider()->lookup(pipelineDesc.renderStepID());
 
-    if (step->staticAttributes().size() + step->appendAttributes().size() >
-        sharedContext->vulkanCaps().maxVertexAttributes()) {
-        SKIA_LOG_W("Requested more than the supported number of vertex attributes");
-        return nullptr;
-    }
-
     skia_private::TArray<SamplerDesc> descContainer {};
     std::unique_ptr<ShaderInfo> shaderInfo =
             ShaderInfo::Make(sharedContext->caps(),
@@ -867,6 +882,12 @@ sk_sp<VulkanGraphicsPipeline> VulkanGraphicsPipeline::Make(
                              step,
                              pipelineDesc.paintParamsID(),
                              &descContainer);
+
+    if (step->staticAttributes().size() + shaderInfo->appendAttributes().size() >
+        sharedContext->vulkanCaps().maxVertexAttributes()) {
+        SKIA_LOG_W("Requested more than the supported number of vertex attributes");
+        return nullptr;
+    }
 
     // Populate an array of sampler ptrs where a sampler's index within the array indicates their
     // binding index within the descriptor set. Initialize all values to nullptr, which represents a
@@ -953,7 +974,7 @@ sk_sp<VulkanGraphicsPipeline> VulkanGraphicsPipeline::Make(
                 VulkanResourceProvider::kIntrinsicConstantSize,
                 VulkanResourceProvider::kIntrinsicConstantStageFlags,
                 shaderInfo->hasCombinedUniforms(),
-                shaderInfo->hasGradientBuffer(),
+                shaderInfo->storageBufferStages(),
                 shaderInfo->numFragmentTexturesAndSamplers(),
                 /*loadMsaaFromResolve=*/false,
                 SkSpan<sk_sp<VulkanSampler>>(immutableSamplers)))) {
@@ -974,10 +995,10 @@ sk_sp<VulkanGraphicsPipeline> VulkanGraphicsPipeline::Make(
             step->primitiveType(),
             step->appendsVertices() ? VK_VERTEX_INPUT_RATE_VERTEX : VK_VERTEX_INPUT_RATE_INSTANCE,
             step->staticAttributes(),
-            step->appendAttributes(),
+            shaderInfo->appendAttributes(),
             vertexBindingDescriptions,
             vertexAttributeDescriptions,
-            step->depthStencilSettings(),
+            shaderInfo->depthStencilSettings(),
             shaderInfo->blendInfo(),
             renderPassDesc,
             &shadersPipeline);
@@ -991,6 +1012,7 @@ sk_sp<VulkanGraphicsPipeline> VulkanGraphicsPipeline::Make(
         pipelineInfo.fNativeFragmentShader = SkShaderUtils::SpirvAsHexStream(fsSPIRV.fBinary);
 #endif
 
+        bool hasPaintParamAttributes = !shaderInfo->appendAttributes().empty();
         pipeline = sk_sp<VulkanGraphicsPipeline>(
                 new VulkanGraphicsPipeline(sharedContext,
                                            pipelineInfo,
@@ -1004,7 +1026,8 @@ sk_sp<VulkanGraphicsPipeline> VulkanGraphicsPipeline::Make(
                                            step->primitiveType(),
                                            step->depthStencilSettings(),
                                            std::move(vertexBindingDescriptions),
-                                           std::move(vertexAttributeDescriptions)));
+                                           std::move(vertexAttributeDescriptions),
+                                           hasPaintParamAttributes));
     }
 
     return pipeline;
@@ -1122,6 +1145,12 @@ VkPipeline VulkanGraphicsPipeline::MakePipeline(
     pipelineCreateInfo.basePipelineHandle = VK_NULL_HANDLE;
     pipelineCreateInfo.basePipelineIndex = -1;
 
+    if (sharedContext->vulkanCaps().supportsPipelineProtectedAccess()) {
+        pipelineCreateInfo.flags |= sharedContext->caps()->protectedSupport()
+                                        ? VK_PIPELINE_CREATE_PROTECTED_ACCESS_ONLY_BIT_EXT
+                                        : VK_PIPELINE_CREATE_NO_PROTECTED_ACCESS_BIT_EXT;
+    }
+
     VkPipelineLibraryCreateInfoKHR shadersLibraryInfo = {};
     shadersLibraryInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LIBRARY_CREATE_INFO_KHR;
 
@@ -1157,15 +1186,11 @@ std::unique_ptr<VulkanProgramInfo> VulkanGraphicsPipeline::CreateLoadMSAAProgram
 
     std::string vertShaderText;
     vertShaderText.append(
-            "layout(vulkan,  push_constant) uniform vertexUniformBuffer {"
-                "half4 uPosXform;"
-            "};"
-
             // MSAA Load Program VS
             "void main() {"
+                // Derive [0,1]x[0,1] coordinates from vertex ID and then scale to [-1,1] for NDC.
                 "float2 position = float2(sk_VertexID >> 1, sk_VertexID & 1);"
-                "sk_Position.xy = position * uPosXform.xy + uPosXform.zw;"
-                "sk_Position.zw = half2(0, 1);"
+                "sk_Position = float4(2 * position - 1, 0, 1);"
             "}");
 
     std::string fragShaderText;
@@ -1214,16 +1239,16 @@ std::unique_ptr<VulkanProgramInfo> VulkanGraphicsPipeline::CreateLoadMSAAProgram
     // references one input attachment texture (which does not require a sampler) and one vertex
     // attribute (NDC position)
     skia_private::TArray<DescriptorData> inputAttachmentDescriptors(1);
-    inputAttachmentDescriptors.push_back(VulkanGraphicsPipeline::kInputAttachmentDescriptor);
+    inputAttachmentDescriptors.push_back(VulkanGraphicsPipeline::GetInputAttachmentDescriptor());
     // This pipeline is used to read from the resolve attachment to a color attachment. We should
     // never require an immutable sampler for this, since that would imply that we are rendering to
     // a surface with an external format.
     if (!program->setLayout(setup_pipeline_layout(
                 sharedContext,
-                /*pushConstantSize=*/32,
+                /*pushConstantSize=*/0,
                 (VkShaderStageFlagBits)VK_SHADER_STAGE_VERTEX_BIT,
                 /*hasCombinedUniforms=*/false,
-                /*hasGradientBuffer=*/false,
+                /*storageStageFlags=*/{},
                 /*numTextureSamplers=*/0,
                 /*loadMsaaFromResolve=*/true,
                 /*immutableSamplers=*/{}))) {
@@ -1279,7 +1304,8 @@ sk_sp<VulkanGraphicsPipeline> VulkanGraphicsPipeline::MakeLoadMSAAPipeline(
                                        PrimitiveType::kTriangleStrip,
                                        /*depthStencilSettings=*/{},
                                        /*vertexBindingDescriptions=*/{},
-                                       /*vertexAttributeDescriptions=*/{}));
+                                       /*vertexAttributeDescriptions=*/{},
+                                       /*hasPaintParamAttributes=*/false));
 }
 
 VulkanGraphicsPipeline::VulkanGraphicsPipeline(
@@ -1295,7 +1321,8 @@ VulkanGraphicsPipeline::VulkanGraphicsPipeline(
         PrimitiveType primitiveType,
         const DepthStencilSettings& depthStencilSettings,
         VertexInputBindingDescriptions&& vertexBindingDescriptions,
-        VertexInputAttributeDescriptions&& vertexAttributeDescriptions)
+        VertexInputAttributeDescriptions&& vertexAttributeDescriptions,
+        bool hasPaintParamAttributes)
     : GraphicsPipeline(sharedContext, pipelineInfo, pipelineLabel)
     , fPipelineLayout(pipelineLayout)
     , fPipeline(pipeline)
@@ -1305,6 +1332,7 @@ VulkanGraphicsPipeline::VulkanGraphicsPipeline(
     , fPrimitiveType(primitiveType)
     , fDepthStencilSettings(depthStencilSettings)
     , fRenderStepID(renderStepID)
+    , fHasPaintParamAttributes(hasPaintParamAttributes)
     , fVertexBindingDescriptions(std::move(vertexBindingDescriptions))
     , fVertexAttributeDescriptions(std::move(vertexAttributeDescriptions)) {
     // Update the newly-created underlying GPU object's label to match the Resource's
@@ -1334,124 +1362,7 @@ void VulkanGraphicsPipeline::updateDynamicState(const VulkanSharedContext* share
     // the diff between pipelines and update the state as needed.  This is not quite so efficient,
     // but will need awareness from the front-end to optimize.
     if (sharedContext->caps()->useBasicDynamicState()) {
-        const DepthStencilSettings& depthStencil = fDepthStencilSettings;
-        const DepthStencilSettings::Face& frontStencil = depthStencil.fFrontStencil;
-        const DepthStencilSettings::Face& backStencil = depthStencil.fBackStencil;
-
-        const DepthStencilSettings* pastDepthStencil =
-                previous ? &previous->fDepthStencilSettings : nullptr;
-        const DepthStencilSettings::Face* pastFrontStencil =
-                previous ? &pastDepthStencil->fFrontStencil : nullptr;
-        const DepthStencilSettings::Face* pastBackStencil =
-                previous ? &pastDepthStencil->fBackStencil : nullptr;
-
-        const bool frontStencilReadMaskDirty =
-                previous == nullptr || pastFrontStencil->fReadMask != frontStencil.fReadMask;
-        if (frontStencilReadMaskDirty) {
-            VULKAN_CALL(sharedContext->interface(),
-                        CmdSetStencilCompareMask(
-                                commandBuffer, VK_STENCIL_FACE_FRONT_BIT, frontStencil.fReadMask));
-        }
-        const bool backStencilReadMaskDirty =
-                previous == nullptr || pastBackStencil->fReadMask != backStencil.fReadMask;
-        if (backStencilReadMaskDirty) {
-            VULKAN_CALL(sharedContext->interface(),
-                        CmdSetStencilCompareMask(
-                                commandBuffer, VK_STENCIL_FACE_BACK_BIT, backStencil.fReadMask));
-        }
-        const bool frontStencilWriteMaskDirty =
-                previous == nullptr || pastFrontStencil->fWriteMask != frontStencil.fWriteMask;
-        if (frontStencilWriteMaskDirty) {
-            VULKAN_CALL(sharedContext->interface(),
-                        CmdSetStencilWriteMask(
-                                commandBuffer, VK_STENCIL_FACE_FRONT_BIT, frontStencil.fWriteMask));
-        }
-        const bool backStencilWriteMaskDirty =
-                previous == nullptr || pastBackStencil->fWriteMask != backStencil.fWriteMask;
-        if (backStencilWriteMaskDirty) {
-            VULKAN_CALL(sharedContext->interface(),
-                        CmdSetStencilWriteMask(
-                                commandBuffer, VK_STENCIL_FACE_BACK_BIT, backStencil.fWriteMask));
-        }
-        const bool stencilReferenceDirty =
-                previous == nullptr ||
-                pastDepthStencil->fStencilReferenceValue != depthStencil.fStencilReferenceValue;
-        if (stencilReferenceDirty) {
-            VULKAN_CALL(sharedContext->interface(),
-                        CmdSetStencilReference(commandBuffer,
-                                               VK_STENCIL_FACE_FRONT_AND_BACK,
-                                               depthStencil.fStencilReferenceValue));
-        }
-        const bool depthCompareOpDirty =
-                previous == nullptr ||
-                pastDepthStencil->fDepthCompareOp != depthStencil.fDepthCompareOp;
-        if (depthCompareOpDirty) {
-            VULKAN_CALL(sharedContext->interface(),
-                        CmdSetDepthCompareOp(
-                                commandBuffer,
-                                compare_op_to_vk_compare_op(depthStencil.fDepthCompareOp)));
-        }
-        const bool depthTestEnabledDirty =
-                previous == nullptr ||
-                pastDepthStencil->fDepthTestEnabled != depthStencil.fDepthTestEnabled;
-        if (depthTestEnabledDirty) {
-            VULKAN_CALL(sharedContext->interface(),
-                        CmdSetDepthTestEnable(commandBuffer, depthStencil.fDepthTestEnabled));
-        }
-        const bool depthWriteEnabledDirty =
-                previous == nullptr ||
-                pastDepthStencil->fDepthWriteEnabled != depthStencil.fDepthWriteEnabled;
-        if (depthWriteEnabledDirty) {
-            VULKAN_CALL(sharedContext->interface(),
-                        CmdSetDepthWriteEnable(commandBuffer, depthStencil.fDepthWriteEnabled));
-        }
-        const bool stencilTestEnabledDirty =
-                previous == nullptr ||
-                pastDepthStencil->fStencilTestEnabled != depthStencil.fStencilTestEnabled;
-        if (stencilTestEnabledDirty) {
-            VULKAN_CALL(sharedContext->interface(),
-                        CmdSetStencilTestEnable(commandBuffer, depthStencil.fStencilTestEnabled));
-        }
-        const bool frontStencilOpsDirty =
-                previous == nullptr ||
-                pastFrontStencil->fDepthStencilPassOp != frontStencil.fDepthStencilPassOp ||
-                pastFrontStencil->fStencilFailOp != frontStencil.fStencilFailOp ||
-                pastFrontStencil->fDepthFailOp != frontStencil.fDepthFailOp ||
-                pastFrontStencil->fCompareOp != frontStencil.fCompareOp;
-        if (frontStencilOpsDirty) {
-            VULKAN_CALL(
-                    sharedContext->interface(),
-                    CmdSetStencilOp(commandBuffer,
-                                    VK_STENCIL_FACE_FRONT_BIT,
-                                    /*failOp=*/
-                                    stencil_op_to_vk_stencil_op(frontStencil.fStencilFailOp),
-                                    /*passOp=*/
-                                    stencil_op_to_vk_stencil_op(frontStencil.fDepthStencilPassOp),
-                                    /*depthFailOp=*/
-                                    stencil_op_to_vk_stencil_op(frontStencil.fDepthFailOp),
-                                    /*compareOp=*/
-                                    compare_op_to_vk_compare_op(frontStencil.fCompareOp)));
-        }
-        const bool backStencilOpsDirty =
-                previous == nullptr ||
-                pastBackStencil->fDepthStencilPassOp != backStencil.fDepthStencilPassOp ||
-                pastBackStencil->fStencilFailOp != backStencil.fStencilFailOp ||
-                pastBackStencil->fDepthFailOp != backStencil.fDepthFailOp ||
-                pastBackStencil->fCompareOp != backStencil.fCompareOp;
-        if (backStencilOpsDirty) {
-            VULKAN_CALL(
-                    sharedContext->interface(),
-                    CmdSetStencilOp(commandBuffer,
-                                    VK_STENCIL_FACE_BACK_BIT,
-                                    /*failOp=*/
-                                    stencil_op_to_vk_stencil_op(backStencil.fStencilFailOp),
-                                    /*passOp=*/
-                                    stencil_op_to_vk_stencil_op(backStencil.fDepthStencilPassOp),
-                                    /*depthFailOp=*/
-                                    stencil_op_to_vk_stencil_op(backStencil.fDepthFailOp),
-                                    /*compareOp=*/
-                                    compare_op_to_vk_compare_op(backStencil.fCompareOp)));
-        }
+        // Primitive type
         const bool primitiveTypeDirty =
                 previous == nullptr || previous->fPrimitiveType != fPrimitiveType;
         if (primitiveTypeDirty) {
@@ -1459,10 +1370,106 @@ void VulkanGraphicsPipeline::updateDynamicState(const VulkanSharedContext* share
                         CmdSetPrimitiveTopology(commandBuffer,
                                                 primitive_type_to_vk_topology(fPrimitiveType)));
         }
+
+        // Depth-stencil settings
+        const auto& [depth, stencil] = fDepthStencilSettings;
+        const auto& [pastDepth, pastStencil] =
+                previous ? previous->fDepthStencilSettings
+                         : std::make_pair(DepthSettings(), StencilSettings()); // ignored
+
+        const bool depthEnabledDirty = !previous || pastDepth.enabled() != depth.enabled();
+        if (depthEnabledDirty) {
+            VULKAN_CALL(sharedContext->interface(),
+                        CmdSetDepthTestEnable(commandBuffer, depth.enabled()));
+        }
+        const bool depthCompareOpDirty = !previous || pastDepth.fCompareOp != depth.fCompareOp;
+        if (depthCompareOpDirty) {
+            VULKAN_CALL(sharedContext->interface(),
+                        CmdSetDepthCompareOp(commandBuffer,
+                                             compare_op_to_vk_compare_op(depth.fCompareOp)));
+        }
+        const bool depthWriteDirty = !previous || pastDepth.fWriteEnabled != depth.fWriteEnabled;
+        if (depthWriteDirty) {
+            VULKAN_CALL(sharedContext->interface(),
+                        CmdSetDepthWriteEnable(commandBuffer, depth.fWriteEnabled));
+        }
+
+        const bool stencilEnabledDirty = !previous || pastStencil.enabled() != stencil.enabled();
+        if (stencilEnabledDirty) {
+            VULKAN_CALL(sharedContext->interface(),
+                        CmdSetStencilTestEnable(commandBuffer, stencil.enabled()));
+        }
+
+        // The rest of the stencil state only needs to be checked if we have non-default state or
+        // if the test state was dirty (in which case it needs to be set back to the default).
+        if (stencilEnabledDirty || stencil.enabled()) {
+            // FRONT_AND_BACK
+            const bool readMaskDirty = !previous || pastStencil.fReadMask != stencil.fReadMask;
+            if (readMaskDirty) {
+                VULKAN_CALL(sharedContext->interface(),
+                            CmdSetStencilCompareMask(commandBuffer,
+                                                     VK_STENCIL_FACE_FRONT_AND_BACK,
+                                                     stencil.fReadMask));
+            }
+            const bool writeMaskDirty = !previous || pastStencil.fWriteMask != stencil.fWriteMask;
+            if (writeMaskDirty) {
+                VULKAN_CALL(sharedContext->interface(),
+                            CmdSetStencilWriteMask(commandBuffer,
+                                                   VK_STENCIL_FACE_FRONT_AND_BACK,
+                                                   stencil.fWriteMask));
+            }
+            const bool referenceValueDirty =
+                    !previous || pastStencil.fReferenceValue != stencil.fReferenceValue;
+            if (referenceValueDirty) {
+                VULKAN_CALL(sharedContext->interface(),
+                            CmdSetStencilReference(commandBuffer,
+                                                   VK_STENCIL_FACE_FRONT_AND_BACK,
+                                                   stencil.fReferenceValue));
+            }
+\
+            // FRONT-only
+            const StencilSettings::Face& front = stencil.fFrontFace;
+            const bool frontStencilOpsDirty = !previous || pastStencil.fFrontFace != front;
+            if (frontStencilOpsDirty) {
+                VULKAN_CALL(
+                        sharedContext->interface(),
+                        CmdSetStencilOp(commandBuffer,
+                                        VK_STENCIL_FACE_FRONT_BIT,
+                                        /*failOp=*/
+                                        stencil_op_to_vk_stencil_op(front.fStencilFailOp),
+                                        /*passOp=*/
+                                        stencil_op_to_vk_stencil_op(front.fDepthStencilPassOp),
+                                        /*depthFailOp=*/
+                                        stencil_op_to_vk_stencil_op(front.fDepthFailOp),
+                                        /*compareOp=*/
+                                        compare_op_to_vk_compare_op(front.fCompareOp)));
+            }
+
+            // BACK-only
+            const StencilSettings::Face& back = stencil.fBackFace;
+            const bool backStencilOpsDirty = !previous || pastStencil.fBackFace != back;
+            if (backStencilOpsDirty) {
+                VULKAN_CALL(
+                        sharedContext->interface(),
+                        CmdSetStencilOp(commandBuffer,
+                                        VK_STENCIL_FACE_BACK_BIT,
+                                        /*failOp=*/
+                                        stencil_op_to_vk_stencil_op(back.fStencilFailOp),
+                                        /*passOp=*/
+                                        stencil_op_to_vk_stencil_op(back.fDepthStencilPassOp),
+                                        /*depthFailOp=*/
+                                        stencil_op_to_vk_stencil_op(back.fDepthFailOp),
+                                        /*compareOp=*/
+                                        compare_op_to_vk_compare_op(back.fCompareOp)));
+            }
+        }
     }
+
     if (sharedContext->caps()->useVertexInputDynamicState()) {
         const bool vertexInputDirty =
-                previous == nullptr || previous->fRenderStepID != fRenderStepID;
+                previous == nullptr ||
+                previous->fRenderStepID != fRenderStepID ||
+                fHasPaintParamAttributes || previous->fHasPaintParamAttributes;
 
         if (vertexInputDirty) {
             VULKAN_CALL(sharedContext->interface(),

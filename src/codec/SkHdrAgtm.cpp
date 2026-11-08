@@ -5,12 +5,23 @@
  * found in the LICENSE file.
  */
 
+#include <algorithm>
+#include <array>
+#include <cmath>
 #include "include/core/SkBitmap.h"
 #include "include/core/SkColorFilter.h"
 #include "include/effects/SkRuntimeEffect.h"
 #include "include/private/SkHdrMetadata.h"
-#include "src/codec/SkCodecPriv.h"
 #include "src/codec/SkHdrAgtmPriv.h"
+
+// Defined locally to avoid pulling in SkCodecPriv.h and general decoder headers.
+#ifndef SkCodecPrintf
+#ifdef SK_PRINT_CODEC_MESSAGES
+    #define SkCodecPrintf SkDebugf
+#else
+    #define SkCodecPrintf(...)
+#endif
+#endif
 
 namespace {
 
@@ -269,7 +280,7 @@ void PopulateSlopeFromPCHIP(AdaptiveGlobalToneMap::GainCurve& gainCurve) {
     for (int i = 0; i < N; ++i) {
         if (i - 1 >= 0 && i + 1 < N && cp[i-1].fX < cp[i].fX && cp[i].fX < cp[i+1].fX) {
             // Interior point, formula (C.8).
-            if (std::signbit(s[i-1]) != std::signbit(s[i])) {
+            if (std::signbit(s[i-1]) != std::signbit(s[i]) || (s[i-1] == 0.f && s[i] == 0.f)) {
                 cp[i].fM = 0.f;
             } else {
                 const float num = 3 * (h[i-1] + h[i]) * s[i-1] * s[i];
@@ -401,6 +412,10 @@ void PopulateUsingRwtmo(AdaptiveGlobalToneMap::HeadroomAdaptiveToneMap& hatm) {
 Weighting ComputeWeighting(const AdaptiveGlobalToneMap::HeadroomAdaptiveToneMap& hatm,
                            float targetedHdrHeadroom) {
     Weighting result;
+    if (!std::isfinite(targetedHdrHeadroom)) {
+        return result;
+    }
+    targetedHdrHeadroom = std::clamp(targetedHdrHeadroom, kMinHdrHeadroom, kMaxHdrHeadroom);
 
     // Create the list of HDR headrooms including the baseline image and all alternate images, as
     // described Clause 6.2.5 Computation of the headroom-adaptive tone map.
@@ -409,11 +424,12 @@ Weighting ComputeWeighting(const AdaptiveGlobalToneMap::HeadroomAdaptiveToneMap&
     size_t N = 0;
 
     // Let H be the sorted list of HDR headrooms.
-    float H[AdaptiveGlobalToneMap::HeadroomAdaptiveToneMap::kMaxNumAlternateImages + 1];
+    std::array<float, AdaptiveGlobalToneMap::HeadroomAdaptiveToneMap::kMaxNumAlternateImages + 1> H;
 
     // Let indices list the index of each entry of H in fAlternateHdrHeadroom. The index for
     // fBaselineHdrHeadroom is Weighting::kInvalidIndex.
-    size_t indices[AdaptiveGlobalToneMap::HeadroomAdaptiveToneMap::kMaxNumAlternateImages + 1];
+    std::array<size_t, AdaptiveGlobalToneMap::HeadroomAdaptiveToneMap::kMaxNumAlternateImages + 1>
+        indices;
     for (size_t i = 0; i < hatm.fAlternateImages.size(); ++i) {
         if (N == i && hatm.fBaselineHdrHeadroom < hatm.fAlternateImages[i].fHdrHeadroom) {
             // Insert the baseline HDR headroom before the indices as they are visited.
@@ -539,7 +555,7 @@ sk_sp<SkColorFilter> MakeColorFilter(
     SkRuntimeShaderBuilder builder(effect);
     builder.uniform("scale_factor") = scaleFactor;
     for (size_t a = 0; a < 2; ++a) {
-        const char* weight_str[2] = {"weight_i", "weight_j"};
+        std::array<const char *, 2> weight_str = {"weight_i", "weight_j"};
         builder.uniform(weight_str[a]) = weighting.fWeight[a];
 
         if (weighting.fWeight[a] == 0.f) {
@@ -548,7 +564,7 @@ sk_sp<SkColorFilter> MakeColorFilter(
         const auto& gain = hatm.fAlternateImages[
             weighting.fAlternateImageIndex[a]].fColorGainFunction;
 
-        const char* mix_rgbx_str[2] = {"mix_rgbx_i", "mix_rgbx_j"};
+        std::array<const char *, 2> mix_rgbx_str = {"mix_rgbx_i", "mix_rgbx_j"};
         builder.uniform(mix_rgbx_str[a]) = SkColor4f({
             gain.fComponentMixing.fRed,
             gain.fComponentMixing.fGreen,
@@ -556,7 +572,7 @@ sk_sp<SkColorFilter> MakeColorFilter(
             0.f,
         });
 
-        const char* mix_Mmcx_str[2] = {"mix_Mmcx_i", "mix_Mmcx_j"};
+        std::array<const char *, 2> mix_Mmcx_str = {"mix_Mmcx_i", "mix_Mmcx_j"};
         builder.uniform(mix_Mmcx_str[a]) = SkColor4f({
             gain.fComponentMixing.fMax,
             gain.fComponentMixing.fMin,
@@ -564,10 +580,11 @@ sk_sp<SkColorFilter> MakeColorFilter(
             0.f,
         });
 
-        const char* curve_texcoord_y_str[2] = {"curve_texcoord_y_i", "curve_texcoord_y_j"};
+        std::array<const char*, 2> curve_texcoord_y_str = {"curve_texcoord_y_i",
+                                                           "curve_texcoord_y_j"};
         builder.uniform(curve_texcoord_y_str[a]) = (weighting.fAlternateImageIndex[a] + 0.5f);
 
-        const char* curve_N_cp_str[2] = {"curve_N_cp_i", "curve_N_cp_j"};
+        std::array<const char *, 2> curve_N_cp_str = {"curve_N_cp_i", "curve_N_cp_j"};
         builder.uniform(curve_N_cp_str[a]) = static_cast<float>(
             gain.fGainCurve.fControlPoints.size());
     }
@@ -587,8 +604,8 @@ sk_sp<SkColorFilter> MakeColorFilter(
     return filter->makeWithWorkingColorSpace(gainApplicationColorSpace);
 }
 
-// Return the maximum luminance from CLLI, MDCV, or a default.
-static float get_max_luminance(const Metadata& metadata) {
+// Return the peak luminance from CLLI, MDCV, or a default.
+static float get_peak_luminance(const Metadata& metadata) {
     if (metadata.getContentLightLevelInformation(nullptr)) {
         ContentLightLevelInformation clli;
         if (metadata.getContentLightLevelInformation(&clli) && clli.fMaxCLL > 0.f) {
@@ -649,9 +666,14 @@ bool PopulateToneMapAgtmParams(const Metadata& metadata,
     // If no tone mapping was specified, then use RWTMO with the baseline HDR headroom computed
     // from the CLLI and MDCV metadata.
     if (!hatm.has_value()) {
+        const float peak_luminance = get_peak_luminance(metadata);
+        float baseline_hdr_headroom = 0.f;
+        if (agtm.fHdrReferenceWhite > 0.f && peak_luminance > agtm.fHdrReferenceWhite) {
+            baseline_hdr_headroom =
+                    std::min(std::log2(peak_luminance / agtm.fHdrReferenceWhite), kMaxHdrHeadroom);
+        }
         hatm = {{
-            .fBaselineHdrHeadroom = std::log2(
-                std::max(get_max_luminance(metadata) / agtm.fHdrReferenceWhite, 1.f))
+            .fBaselineHdrHeadroom = baseline_hdr_headroom,
         }};
         AgtmHelpers::PopulateUsingRwtmo(hatm.value());
     }

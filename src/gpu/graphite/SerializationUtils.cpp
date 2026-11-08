@@ -9,6 +9,7 @@
 
 #include "include/core/SkFourByteTag.h"
 #include "include/core/SkStream.h"
+#include "include/private/SkAttributes.h"
 #include "src/core/SkAutoMalloc.h"
 #include "src/gpu/SwizzlePriv.h"
 #include "src/gpu/graphite/Caps.h"
@@ -39,7 +40,7 @@ constexpr bool is_valid_samplecount(uint32_t sampleCount) {
         return false;
     }
 
-    if (0 != memcmp(magic, kMagic, sizeof(kMagic))) {
+    if (0 != SK_UNSAFE_TODO(memcmp(magic, kMagic, sizeof(kMagic)))) {
         return false;
     }
 
@@ -208,6 +209,10 @@ constexpr bool is_valid_samplecount(uint32_t sampleCount) {
         }
 
         while (stream->getPosition() < endOfKey) {
+            int32_t rootBlockHeader;
+            if (!stream->readS32(&rootBlockHeader) || rootBlockHeader >= 0) {
+                return false;
+            }
             if (!block_contains_ext_format(shaderCodeDictionary, stream, containsExtFormat)) {
                 return false;
             }

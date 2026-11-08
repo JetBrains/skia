@@ -21,7 +21,6 @@
 #include "src/gpu/graphite/Device.h"
 #include "src/gpu/graphite/Image_Graphite.h"
 #include "src/gpu/graphite/RecorderPriv.h"
-#include "src/gpu/graphite/ResourceProvider.h"
 #include "src/gpu/graphite/Texture.h"
 #include "src/gpu/graphite/TextureFormat.h"
 #include "src/gpu/graphite/TextureInfoPriv.h"
@@ -149,7 +148,8 @@ sk_sp<Surface> Surface::Make(Recorder* recorder,
                              SkBackingFit backingFit,
                              const SkSurfaceProps* props,
                              LoadOp initialLoadOp,
-                             bool registerWithRecorder) {
+                             bool registerWithRecorder,
+                             bool allowUnpremul) {
     sk_sp<Device> device = Device::Make(recorder,
                                         info,
                                         budgeted,
@@ -158,7 +158,8 @@ sk_sp<Surface> Surface::Make(Recorder* recorder,
                                         SkSurfacePropsCopyOrDefault(props),
                                         initialLoadOp,
                                         label,
-                                        registerWithRecorder);
+                                        registerWithRecorder,
+                                        allowUnpremul);
     if (!device) {
         return nullptr;
     }
@@ -182,6 +183,7 @@ void Flush(SkSurface* surface) {
     }
     auto gs = static_cast<Surface*>(surface);
     gs->fDevice->flushPendingWork(/*drawContext=*/nullptr);
+    gs->fDevice->resetStorageCache();
 }
 
 } // namespace skgpu::graphite

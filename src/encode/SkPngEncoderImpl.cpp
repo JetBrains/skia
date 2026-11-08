@@ -36,7 +36,7 @@
 
 #include <algorithm>
 #include <array>
-#include <csetjmp>
+#include <setjmp.h>
 #include <cstdint>
 #include <cstring>
 #include <memory>
@@ -276,7 +276,7 @@ bool SkPngEncoderMgr::setHeader(const SkPngEncoderBase::TargetInfo& targetInfo,
 }
 
 static void set_icc(png_structp png_ptr, png_infop info_ptr, const SkImageInfo& info) {
-    sk_sp<SkData> icc = icc_from_color_space(info);
+    sk_sp<SkData> icc = SkWriteICCProfile(info.colorSpace());
     if (!icc) {
         return;
     }

@@ -29,9 +29,9 @@
 #include <memory>
 #include <vector>
 
+class SkCapture;
 class SkColorInfo;
 class SkSurface;
-class SkCapture;
 enum SkYUVColorSpace : int;
 class SkColorSpace;
 class SkTraceMemoryDump;
@@ -39,13 +39,13 @@ struct SkIRect;
 struct SkImageInfo;
 
 namespace skcpu {
-class ContextImpl;
 class Recorder;
 }  // namespace skcpu
 
 namespace skgpu {
 enum class BackendApi : unsigned int;
 enum class GpuStatsFlags : uint32_t;
+class MutableTextureState;
 }
 
 namespace skgpu::graphite {
@@ -54,14 +54,15 @@ class BackendTexture;
 class Buffer;
 class ClientMappedBufferManager;
 class ContextPriv;
-struct ContextOptions;
 class PersistentPipelineStorage;
 class PrecompileContext;
 class QueueManager;
 class ResourceProvider;
 class SharedContext;
+class TextureFormatXferFn;
 class TextureProxy;
 class TextureProxyView;
+struct ContextOptions;
 
 class SK_API Context final {
 public:
@@ -309,6 +310,12 @@ public:
      */
     sk_sp<SkCapture> endCapture();
 
+    /**
+     * Updates the backend texture's mutable state (e.g. Vulkan layout and queue family index)
+     * and records the necessary barriers/transitions on the active command buffer.
+     */
+    bool setMutableState(const BackendTexture& texture, const skgpu::MutableTextureState& state);
+
     // Provides access to functions that aren't part of the public API.
     ContextPriv priv();
     const ContextPriv priv() const;  // NOLINT(readability-const-return-type)
@@ -390,16 +397,16 @@ private:
     // readable. However, the texture does not need to be sampleable.
     void asyncReadTexture(std::unique_ptr<Recorder>,
                           const AsyncParams<TextureProxyView>&,
-                          const SkColorInfo& srcColorInfo);
+                          TextureFormatXferFn xferFn);
 
     // Inserts a texture to buffer transfer task, used by asyncReadPixels methods. If the
     // Recorder is non-null, tasks will be added to the Recorder's list; otherwise the transfer
     // tasks will be added to the queue manager directly.
     PixelTransferResult transferPixels(Recorder*,
                                        const TextureProxyView& srcView,
-                                       const SkColorInfo& srcColorInfo,
                                        const SkColorInfo& dstColorInfo,
-                                       const SkIRect& srcRect);
+                                       const SkIRect& srcRect,
+                                       const TextureFormatXferFn& cpuXferFn);
 
     // If the recorder is non-null, it will be snapped and inserted with the assumption that the
     // copy tasks (and possibly preparatory draw tasks) have already been added to the Recording.
@@ -412,7 +419,6 @@ private:
     std::unique_ptr<ResourceProvider> fResourceProvider;
     std::unique_ptr<ClientMappedBufferManager> fMappedBufferManager;
     std::unique_ptr<QueueManager> fQueueManager;
-    std::unique_ptr<const skcpu::ContextImpl> fCPUContext;
 
     PersistentPipelineStorage* fPersistentPipelineStorage;
 

@@ -31,17 +31,20 @@ public:
 
     ~BitmapTextRenderStep() override;
 
-    std::string vertexSkSL() const override;
+    std::string vertexSkSL(const RootNodesInfo&) const override;
     std::string texturesAndSamplersSkSL(const ResourceBindingRequirements&,
                                         int* nextBindingIndex) const override;
     // For a given BitmapTextRenderStep instance,
     // we will only use either fragmentColorSkSL() (for color text)
     // or fragmentCoverageSKSL() (for grayscale and LCD masks), never both.
-    const char* fragmentColorSkSL() const override;
+    std::string fragmentColorSkSL(const RootNodesInfo&) const override;
     const char* fragmentCoverageSkSL() const override;
     bool usesUniformsInFragmentSkSL() const override;
 
-    void writeVertices(DrawWriter*, const DrawParams&, uint32_t ssboIndex) const override;
+    void writeVertices(DrawWriter*,
+                       StorageContext*,
+                       const DrawParams&,
+                       uint32_t ssboIndex) const override;
     void writeUniformsAndTextures(const DrawParams&, PipelineDataGatherer*) const override;
 
 private:

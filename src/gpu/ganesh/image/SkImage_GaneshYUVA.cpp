@@ -42,6 +42,7 @@
 #include "src/gpu/ganesh/effects/GrYUVtoRGBEffect.h"
 #include "src/image/SkImage_Base.h"
 
+#include <array>
 #include <utility>
 
 enum class SkTileMode;
@@ -92,7 +93,7 @@ bool SkImage_GaneshYUVA::setupMipmapsForPlanes(GrRecordingContext* context) cons
         return true;
     }
     int n = fYUVAProxies.yuvaInfo().numPlanes();
-    sk_sp<GrSurfaceProxy> newProxies[4];
+    std::array<sk_sp<GrSurfaceProxy>, 4> newProxies;
     for (int i = 0; i < n; ++i) {
         auto* t = fYUVAProxies.proxy(i)->asTextureProxy();
         if (t->mipmapped() == skgpu::Mipmapped::kNo && (t->width() > 1 || t->height() > 1)) {
@@ -106,16 +107,16 @@ bool SkImage_GaneshYUVA::setupMipmapsForPlanes(GrRecordingContext* context) cons
             newProxies[i] = fYUVAProxies.refProxy(i);
         }
     }
-    fYUVAProxies =
-            GrYUVATextureProxies(fYUVAProxies.yuvaInfo(), newProxies, fYUVAProxies.textureOrigin());
+    fYUVAProxies = GrYUVATextureProxies(fYUVAProxies.yuvaInfo(), newProxies.data(),
+                                        fYUVAProxies.textureOrigin());
     SkASSERT(fYUVAProxies.isValid());
     return true;
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
 
-GrSemaphoresSubmitted SkImage_GaneshYUVA::flush(GrDirectContext* dContext,
-                                                const GrFlushInfo& info) const {
+GrDirectContext::FlushResult SkImage_GaneshYUVA::flush(GrDirectContext* dContext,
+                                                       const GrFlushInfo& info) const {
     if (!fContext->priv().matches(dContext) || dContext->abandoned()) {
         if (info.fSubmittedProc) {
             info.fSubmittedProc(info.fSubmittedContext, false);
@@ -123,16 +124,16 @@ GrSemaphoresSubmitted SkImage_GaneshYUVA::flush(GrDirectContext* dContext,
         if (info.fFinishedProc) {
             info.fFinishedProc(info.fFinishedContext);
         }
-        return GrSemaphoresSubmitted::kNo;
+        return {false, GrSemaphoresSubmitted::kNo};
     }
 
-    GrSurfaceProxy* proxies[SkYUVAInfo::kMaxPlanes] = {};
+    std::array<GrSurfaceProxy *, SkYUVAInfo::kMaxPlanes> proxies = {};
     size_t numProxies = fYUVAProxies.numPlanes();
     for (size_t i = 0; i < numProxies; ++i) {
         proxies[i] = fYUVAProxies.proxy(i);
     }
     return dContext->priv().flushSurfaces(
-            {proxies, numProxies}, SkSurfaces::BackendSurfaceAccess::kNoAccess, info);
+            {proxies.data(), numProxies}, SkSurfaces::BackendSurfaceAccess::kNoAccess, info);
 }
 
 bool SkImage_GaneshYUVA::onHasMipmaps() const {
@@ -187,11 +188,18 @@ std::tuple<GrSurfaceProxyView, GrColorType> SkImage_GaneshYUVA::asView(GrRecordi
                                                                        skgpu::Mipmapped mipmapped,
                                                                        GrImageTexGenPolicy,
                                                                        GrRenderTargetProxy*) const {
+    return this->flattenToView(rContext, mipmapped, /*subset=*/nullptr);
+}
+
+std::tuple<GrSurfaceProxyView, GrColorType> SkImage_GaneshYUVA::flattenToView(
+        GrRecordingContext* rContext,
+        skgpu::Mipmapped mipmapped,
+        const SkRect* subset) const {
     if (!fContext->priv().matches(rContext)) {
         return {};
     }
     auto sfc = rContext->priv().makeSFC(this->imageInfo(),
-                                        "Image_GpuYUVA_ReinterpretColorSpace",
+                                        "Image_GpuYUVA_Flatten",
                                         SkBackingFit::kExact,
                                         /*sample count*/ 1,
                                         mipmapped,
@@ -203,7 +211,16 @@ std::tuple<GrSurfaceProxyView, GrColorType> SkImage_GaneshYUVA::asView(GrRecordi
     }
 
     const GrCaps& caps = *rContext->priv().caps();
-    auto fp = GrYUVtoRGBEffect::Make(fYUVAProxies, GrSamplerState::Filter::kNearest, caps);
+    // When clamping to a |subset|, use kLinear rather than kNearest. kNearest selects the
+    // "fancy upsampling" chroma path (GrTextureEffect::MakeCustomLinearFilterInset), which
+    // deliberately samples texels just outside the subset for the edge blend. If the subset is a
+    // video frame's visible rect and the coded padding beyond it is invalid (e.g. zeroed NV12
+    // chroma), that produces a colored strip along the subset edge. kLinear takes the
+    // GrTextureEffect::MakeSubset path, which hard-clamps sampling to the subset.
+    const GrSamplerState::Filter filter =
+            subset ? GrSamplerState::Filter::kLinear : GrSamplerState::Filter::kNearest;
+    auto fp = GrYUVtoRGBEffect::Make(
+            fYUVAProxies, filter, caps, SkMatrix::I(), subset, /*domain=*/subset);
     if (fFromColorSpace) {
         fp = GrColorSpaceXformEffect::Make(std::move(fp),
                                            fFromColorSpace.get(),

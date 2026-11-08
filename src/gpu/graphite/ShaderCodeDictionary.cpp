@@ -9,8 +9,10 @@
 
 #include "include/core/SkTileMode.h"
 #include "include/effects/SkRuntimeEffect.h"
+#include "include/private/SkAttributes.h"
 #include "include/private/SkLog.h"
 #include "src/core/SkColorSpaceXformSteps.h"
+#include "src/core/SkMeshPriv.h"
 #include "src/core/SkRuntimeEffectPriv.h"
 #include "src/gpu/BlendFormula.h"
 #include "src/gpu/graphite/Caps.h"
@@ -19,6 +21,7 @@
 #include "src/gpu/graphite/RuntimeEffectDictionary.h"
 #include "src/gpu/graphite/ShaderInfo.h"
 #include "src/gpu/graphite/UniformManager.h"
+#include "src/gpu/graphite/render/MeshRenderStep.h"
 #include "src/sksl/SkSLString.h"
 #include "src/sksl/codegen/SkSLPipelineStageCodeGenerator.h"
 #include "src/sksl/ir/SkSLVarDeclarations.h"
@@ -146,9 +149,9 @@ void append_uniforms(TArray<std::string>* list,
         list->push_back(get_mangled_sampler_name(entry->fTexturesAndSamplers[i], node->keyIndex()));
     }
 
-    // Append gradient buffer.
-    if (node->requiredFlags() & SnippetRequirementFlags::kGradientBuffer) {
-        list->push_back(ShaderInfo::kGradientBufferName);
+    // Append storage buffer.
+    if (node->requiredFlags() & SnippetRequirementFlags::kStorageBuffer) {
+        list->push_back(ShaderInfo::kStorageBufferName);
     }
 
     // Append child output names.
@@ -671,6 +674,71 @@ private:
     SkDEBUGCODE(const SkRuntimeEffect* fEffect;)
 };
 
+class MeshProgramCallbacks : public SkSL::PipelineStage::Callbacks {
+public:
+    MeshProgramCallbacks(std::string mainFn,
+                         const ShaderInfo* shaderInfo,
+                         const ShaderNode* node)
+            : fMainFn(mainFn), fShaderInfo(shaderInfo), fNode(node) {}
+
+    std::string getMainName() override { return fMainFn; }
+    void defineFunction(const char* declaration, const char* body, bool isMain) override {
+        fPreamble = fPreamble.append(SkSL::String::printf("%s {\n %s }\n", declaration, body));
+    }
+    void declareFunction(const char* declaration) override {}
+    void defineStruct(const char* definition) override {
+        fPreamble = fPreamble.append(definition).append("\n");
+    }
+    void declareGlobal(const char* declaration) override {
+        fPreamble = fPreamble.append(declaration).append("\n");
+    }
+
+    std::string declareUniform(const SkSL::VarDeclaration* decl) override {
+        const std::string uniformName = std::string(decl->var()->name());
+        if (fShaderInfo && fShaderInfo->uniformSsboIndex()) {
+            return SkSL::String::printf("combinedUniformData[%s].%s",
+                                        fShaderInfo->uniformSsboIndex(),
+                                        uniformName.c_str());
+        }
+        return uniformName;
+    }
+
+    std::string sampleShader(int index, std::string coords) override {
+        ShaderSnippet::Args args = ShaderSnippet::kDefaultArgs;
+        args.fFragCoord = coords;
+        return invoke_node(*fShaderInfo, fNode->child(index), args);
+    }
+
+    std::string sampleColorFilter(int index, std::string color) override {
+        ShaderSnippet::Args args = ShaderSnippet::kDefaultArgs;
+        args.fPriorStageOutput = color;
+        return invoke_node(*fShaderInfo, fNode->child(index), args);
+    }
+
+    std::string sampleBlender(int index, std::string src, std::string dst) override {
+        ShaderSnippet::Args args = ShaderSnippet::kDefaultArgs;
+        args.fPriorStageOutput = src;
+        args.fBlenderDstColor = dst;
+        return invoke_node(*fShaderInfo, fNode->child(index), args);
+    }
+
+    std::string toLinearSrgb(std::string color) override {
+        SK_ABORT("Color transform intrinsics not allowed.");
+    }
+    std::string fromLinearSrgb(std::string color) override {
+        SK_ABORT("Color transform intrinsics not allowed.");
+    }
+
+    std::string fPreamble;
+    std::string fMainFn;
+    const ShaderInfo* fShaderInfo;
+    const ShaderNode* fNode;
+};
+
+std::string NoopPreamble(const ShaderInfo& shaderInfo, const ShaderNode* node) {
+    return "";
+}
+
 std::string GenerateRuntimeShaderPreamble(const ShaderInfo& shaderInfo,
                                           const ShaderNode* node) {
     // Find this runtime effect in the shader-code or runtime-effect dictionary.
@@ -704,6 +772,38 @@ std::string GenerateRuntimeShaderPreamble(const ShaderInfo& shaderInfo,
 
 } // anonymous namespace
 
+std::string ShaderCodeDictionary::GenerateMeshVSPreamble(const ShaderInfo& shaderInfo,
+                                                         const ShaderNode* node) {
+    const SkMeshSpecification* spec =
+        shaderInfo.runtimeEffectDictionary()->findMeshSpec(node->codeSnippetId());
+    SkASSERT(spec);
+
+    const SkSL::Program* vsProgram = SkMeshSpecificationPriv::VS(*spec);
+    MeshProgramCallbacks vsCallbacks(MeshRenderStep::kMeshVSMainName, &shaderInfo, node);
+    SkSL::PipelineStage::ConvertProgram(*vsProgram,
+                                        /*sampleCoords=*/nullptr,
+                                        /*inputColor=*/  nullptr,
+                                        /*destColor=*/   nullptr,
+                                        &vsCallbacks);
+    return vsCallbacks.fPreamble;
+}
+
+std::string ShaderCodeDictionary::GenerateMeshFSPreamble(const ShaderInfo& shaderInfo,
+                                                         const ShaderNode* node) {
+    const SkMeshSpecification* spec =
+        shaderInfo.runtimeEffectDictionary()->findMeshSpec(node->codeSnippetId());
+    SkASSERT(spec);
+
+    const SkSL::Program* fsProgram = SkMeshSpecificationPriv::FS(*spec);
+    MeshProgramCallbacks fsCallbacks(MeshRenderStep::kMeshFSMainName, &shaderInfo, node);
+    SkSL::PipelineStage::ConvertProgram(*fsProgram,
+                                        /*sampleCoords=*/nullptr,
+                                        /*inputColor=*/  nullptr,
+                                        /*destColor=*/   nullptr,
+                                        &fsCallbacks);
+    return fsCallbacks.fPreamble;
+}
+
 #if defined(SK_DEBUG)
 bool ShaderCodeDictionary::isValidID(int snippetID) const {
     if (snippetID < 0) {
@@ -736,7 +836,7 @@ void ShaderCodeDictionary::dump(const Caps* caps, UniquePaintParamsID id) const 
 }
 #endif
 
-static SkSLType uniform_type_to_sksl_type(const SkRuntimeEffect::Uniform& u) {
+SkSLType ShaderCodeDictionary::UniformTypeToSkSLType(const SkRuntimeEffect::Uniform& u) {
     using Type = SkRuntimeEffect::Uniform::Type;
     if (u.flags & SkRuntimeEffect::Uniform::kHalfPrecision_Flag) {
         switch (u.type) {
@@ -772,31 +872,35 @@ static SkSLType uniform_type_to_sksl_type(const SkRuntimeEffect::Uniform& u) {
     SkUNREACHABLE;
 }
 
-const char* ShaderCodeDictionary::addTextToArena(std::string_view text) {
-    char* textInArena = fArena.makeArrayDefault<char>(text.size() + 1);
-    memcpy(textInArena, text.data(), text.size());
-    textInArena[text.size()] = '\0';
+static const char* add_text_to_arena(std::string_view text, SkArenaAlloc* arena) {
+    char* textInArena = arena->makeArrayDefault<char>(text.size() + 1);
+    SK_UNSAFE_TODO(memcpy(textInArena, text.data(), text.size()));
+    SK_UNSAFE_TODO(textInArena[text.size()] = '\0');
     return textInArena;
 }
 
 SkSpan<const Uniform> ShaderCodeDictionary::convertUniforms(const SkRuntimeEffect* effect) {
-    using rteUniform = SkRuntimeEffect::Uniform;
-    SkSpan<const rteUniform> uniforms = effect->uniforms();
+    return ShaderCodeDictionary::ConvertRuntimeEffectUniforms(effect->uniforms(), &fArena);
+}
 
+SkSpan<const Uniform> ShaderCodeDictionary::ConvertRuntimeEffectUniforms(
+        SkSpan<const SkRuntimeEffect::Uniform> uniforms,
+        SkArenaAlloc* arena) {
+    using rteUniform = SkRuntimeEffect::Uniform;
     const int numUniforms = uniforms.size();
 
     // Convert the SkRuntimeEffect::Uniform array into its Uniform equivalent.
-    Uniform* uniformArray = fArena.makeInitializedArray<Uniform>(numUniforms, [&](int index) {
+    Uniform* uniformArray = arena->makeInitializedArray<Uniform>(numUniforms, [&](int index) {
         const rteUniform* u;
         u = &uniforms[index];
 
         // The existing uniform names live in the passed-in SkRuntimeEffect and may eventually
-        // disappear. Copy them into fArena. (It's safe to do this within makeInitializedArray; the
-        // entire array is allocated in one big slab before any initialization calls are done.)
-        const char* name = this->addTextToArena(u->name);
+        // disappear. Copy them into the arena. (It's safe to do this within makeInitializedArray;
+        // the entire array is allocated in one big slab before any initialization calls are done.)
+        const char* name = add_text_to_arena(u->name, arena);
 
         // Add one Uniform to our array.
-        SkSLType type = uniform_type_to_sksl_type(*u);
+        SkSLType type = ShaderCodeDictionary::UniformTypeToSkSLType(*u);
         return (u->flags & rteUniform::kArray_Flag) ? Uniform(name, type, u->count)
                                                     : Uniform(name, type);
     });
@@ -897,6 +1001,52 @@ int ShaderCodeDictionary::findOrCreateRuntimeEffectSnippet(const SkRuntimeEffect
 
     fRuntimeEffectMap.set(key, newCodeSnippetID);
     return newCodeSnippetID;
+}
+
+int ShaderCodeDictionary::findOrCreateMeshSnippet(const SkMeshSpecification* spec) {
+    SkAutoSpinlock lock{fSpinLock};
+
+    // Use the combination of SkMeshSpecification hash, attribute stride, and uniform stride
+    // as our key. In the event of a hash collision, due to differing shader code, color space, or
+    // alpha type, we will still have the correct uniform size and attribute stride to prevent
+    // unexpected memory sizes for allocated buffers.
+    MeshSpecKey key;
+    key.fHash = SkMeshSpecificationPriv::Hash(*spec);
+    key.fAttributeStride = static_cast<uint32_t>(spec->stride());
+    key.fUniformSize = static_cast<uint32_t>(spec->uniformSize());
+
+    int32_t* existingCodeSnippetID = fMeshMap.find(key);
+    if (existingCodeSnippetID) {
+        return *existingCodeSnippetID;
+    }
+
+    ShaderSnippet snippet = this->convertMeshShader(spec);
+    fUserDefinedCodeSnippets.push_back(std::move(snippet));
+    int newCodeSnippetID = kUnknownRuntimeEffectIDStart + fUserDefinedCodeSnippets.size() - 1;
+
+    fMeshMap.set(key, newCodeSnippetID);
+    return newCodeSnippetID;
+}
+
+ShaderSnippet ShaderCodeDictionary::convertMeshShader(const SkMeshSpecification* spec) {
+    int numChildren = SkTo<int>(spec->children().size());
+
+     // We emit uniforms for mesh geometry manually at the end of the uniform list where
+     // RenderStep uniforms would normally be written. This allows the MeshRenderStep to
+     // be responsible for writing the uniform data, since it is where render step
+     // uniforms normally reside.
+     //
+     // We also provide a Noop preamble so any children runtime effects that the user's
+     // fragment main function relies on are emitted before we emit their main function.
+     // Then after emitting all other preambles, we emit the user's main function at the
+     // very end since only the MeshRenderStep relies on it.
+    return ShaderSnippet("MeshShader",
+                         /*staticFn=*/nullptr,
+                         SnippetRequirementFlags::kNone,
+                         /*uniforms=*/{},
+                         /*texturesAndSamplers=*/{},
+                         NoopPreamble,
+                         numChildren);
 }
 
 void ShaderCodeDictionary::registerUserDefinedKnownRuntimeEffects(
@@ -1051,7 +1201,7 @@ ShaderCodeDictionary::ShaderCodeDictionary(
     fBuiltInCodeSnippets[(int) BuiltInCodeSnippetID::kLinearGradientShaderBuffer] = {
             /*name=*/"LinearGradientBuffer",
             /*staticFn=*/"sk_linear_grad_buf_shader",
-            SnippetRequirementFlags::kLocalCoords | SnippetRequirementFlags::kGradientBuffer,
+            SnippetRequirementFlags::kLocalCoords | SnippetRequirementFlags::kStorageBuffer,
             /*uniforms=*/{{{ "numStops",     SkSLType::kInt },
                            { "bufferOffset", SkSLType::kInt },
                            { "tilemode",     SkSLType::kInt },
@@ -1091,7 +1241,7 @@ ShaderCodeDictionary::ShaderCodeDictionary(
     fBuiltInCodeSnippets[(int) BuiltInCodeSnippetID::kRadialGradientShaderBuffer] = {
             /*name=*/"RadialGradientBuffer",
             /*staticFn=*/"sk_radial_grad_buf_shader",
-            SnippetRequirementFlags::kLocalCoords | SnippetRequirementFlags::kGradientBuffer,
+            SnippetRequirementFlags::kLocalCoords | SnippetRequirementFlags::kStorageBuffer,
             /*uniforms=*/{{{ "numStops",     SkSLType::kInt },
                            { "bufferOffset", SkSLType::kInt },
                            { "tilemode",     SkSLType::kInt },
@@ -1137,7 +1287,7 @@ ShaderCodeDictionary::ShaderCodeDictionary(
     fBuiltInCodeSnippets[(int) BuiltInCodeSnippetID::kSweepGradientShaderBuffer] = {
             /*name=*/"SweepGradientBuffer",
             /*staticFn=*/"sk_sweep_grad_buf_shader",
-            SnippetRequirementFlags::kLocalCoords | SnippetRequirementFlags::kGradientBuffer,
+            SnippetRequirementFlags::kLocalCoords | SnippetRequirementFlags::kStorageBuffer,
             /*uniforms=*/{{{ "bias",         SkSLType::kFloat },
                            { "scale",        SkSLType::kFloat },
                            { "numStops",     SkSLType::kInt },
@@ -1191,7 +1341,7 @@ ShaderCodeDictionary::ShaderCodeDictionary(
     fBuiltInCodeSnippets[(int) BuiltInCodeSnippetID::kConicalGradientShaderBuffer] = {
             /*name=*/"ConicalGradientBuffer",
             /*staticFn=*/"sk_conical_grad_buf_shader",
-            SnippetRequirementFlags::kLocalCoords | SnippetRequirementFlags::kGradientBuffer,
+            SnippetRequirementFlags::kLocalCoords | SnippetRequirementFlags::kStorageBuffer,
             /*uniforms=*/{{{ "radius0",      SkSLType::kFloat },
                            { "dRadius",      SkSLType::kFloat },
                            { "a",            SkSLType::kFloat },
@@ -1289,6 +1439,21 @@ ShaderCodeDictionary::ShaderCodeDictionary(
                                       { "samplerU" },
                                       { "samplerV" },
                                       { "samplerA" }}}
+    };
+    fBuiltInCodeSnippets[(int) BuiltInCodeSnippetID::kPackedYUVImageShader] = {
+            /*name=*/"PackedYUVImage",
+            /*staticFn=*/"sk_packed_yuv_image_shader",
+            SnippetRequirementFlags::kLocalCoords,
+            /*uniforms=*/{{{ "invImgSize",         SkSLType::kFloat2 },
+                           { "subset",             SkSLType::kFloat4 },
+                           { "tilemodeX",          SkSLType::kInt },
+                           { "tilemodeY",          SkSLType::kInt },
+                           { "channelSelectY",     SkSLType::kHalf4 },
+                           { "channelSelectU",     SkSLType::kHalf4 },
+                           { "channelSelectV",     SkSLType::kHalf4 },
+                           { "yuvToRGBMatrix",     SkSLType::kHalf3x3 },
+                           { "yuvToRGBTranslate",  SkSLType::kHalf3 }}},
+            /*texturesAndSamplers=*/{{"samplerPlane"}}
     };
     fBuiltInCodeSnippets[(int) BuiltInCodeSnippetID::kCubicYUVImageShader] = {
             /*name=*/"CubicYUVImage",

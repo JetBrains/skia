@@ -70,6 +70,19 @@ void Caps::finishInitialization(const ContextOptions& options) {
     fRequireOrderedRecordings = options.fRequireOrderedRecordings;
     fSetBackendLabels = options.fSetBackendLabels;
     fAvoidDepthMode = options.fAvoidDepthMode;
+
+    // Enable setting this flag from either the private or public context options.
+    fDrawListLayer |= options.fUseDrawListLayer;
+
+    constexpr int kMaxFallbackTextureSize = 8192;
+    fResourceBindingReqs.fMaxFallbackTextureSize =
+            std::max(std::min(kMaxFallbackTextureSize, fMaxTextureSize), 1);
+
+    constexpr int kBytesPerTexel = 16;  // 4 floats (RGBA32F) per fallback texel
+    fResourceBindingReqs.fMaxFallbackTextureBytes =
+            fResourceBindingReqs.fMaxFallbackTextureSize *
+            fResourceBindingReqs.fMaxFallbackTextureSize *
+            kBytesPerTexel;
 }
 
 sk_sp<SkCapabilities> Caps::capabilities() const { return fCapabilities; }
@@ -156,6 +169,14 @@ bool Caps::isSupported(const TextureInfo& info,
 
 bool Caps::isTexturable(const TextureInfo& info, bool allowMSAA) const {
     return this->isSupported(info, TextureUsage::kSample,
+                             allowMSAA,
+                             /*allowExternal=*/true,
+                             /*allowCompressed=*/true,
+                             /*allowProtected=*/true);
+}
+
+bool Caps::isReadable(const TextureInfo& info, bool allowMSAA) const {
+    return this->isSupported(info, TextureUsage::kRead,
                              allowMSAA,
                              /*allowExternal=*/true,
                              /*allowCompressed=*/true,
@@ -293,6 +314,17 @@ TextureInfo Caps::getDefaultSampledTextureInfo(SkColorType colorType,
                                        Discardable::kNo);
 }
 
+TextureInfo Caps::getDefaultReadableTextureInfo(TextureFormat format, Protected isProtected) const {
+    return this->getDefaultTextureInfo(TextureUsage::kRead |
+                                       TextureUsage::kCopySrc |
+                                       TextureUsage::kCopyDst,
+                                       SkSpan(&format, 1),
+                                       SampleCount::k1,
+                                       Mipmapped::kNo,
+                                       isProtected,
+                                       Discardable::kNo);
+}
+
 TextureInfo Caps::getTextureInfoForSampledCopy(const TextureInfo& info, Mipmapped mipmapped) const {
     const TextureFormat format = TextureInfoPriv::ViewFormat(info);
     return this->getDefaultTextureInfo(kDefaultSampledUsage,
@@ -301,6 +333,11 @@ TextureInfo Caps::getTextureInfoForSampledCopy(const TextureInfo& info, Mipmappe
                                        mipmapped,
                                        info.isProtected(),
                                        Discardable::kNo);
+}
+
+TextureInfo Caps::getTextureInfoForReadableCopy(const TextureInfo& info) const {
+    return this->getDefaultReadableTextureInfo(TextureInfoPriv::ViewFormat(info),
+                                               info.isProtected());
 }
 
 TextureInfo Caps::getDefaultCompressedTextureInfo(SkTextureCompressionType compressionType,
@@ -326,6 +363,19 @@ TextureInfo Caps::getDefaultStorageTextureInfo(SkColorType colorType) const {
                                        SampleCount::k1,
                                        Mipmapped::kNo,
                                        Protected::kNo,
+                                       Discardable::kNo);
+}
+
+TextureInfo Caps::getDefaultReadableStorageTextureInfo(TextureFormat format,
+                                                       Protected isProtected) const {
+    return this->getDefaultTextureInfo(TextureUsage::kStorage |
+                                       TextureUsage::kRead |
+                                       TextureUsage::kCopySrc |
+                                       TextureUsage::kCopyDst,
+                                       SkSpan(&format, 1),
+                                       SampleCount::k1,
+                                       Mipmapped::kNo,
+                                       isProtected,
                                        Discardable::kNo);
 }
 

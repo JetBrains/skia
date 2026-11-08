@@ -34,7 +34,7 @@
 #endif  // SK_CODEC_DECODES_JPEG_GAINMAPS
 
 #include <array>
-#include <csetjmp>
+#include <setjmp.h>
 #include <cstring>
 #include <utility>
 
@@ -911,7 +911,7 @@ SkCodec::Result SkJpegCodec::onGetYUVAPlanes(const SkYUVAPixmaps& yuvaPixmaps) {
     JSAMPARRAY yuv[3];
 
     // Set aside enough space for pointers to rows of Y, U, and V.
-    JSAMPROW rowptrs[2 * DCTSIZE + DCTSIZE + DCTSIZE];
+    std::array<JSAMPROW, 2 * DCTSIZE + DCTSIZE + DCTSIZE> rowptrs;
     yuv[0] = &rowptrs[0];            // Y rows (DCTSIZE or 2 * DCTSIZE)
     yuv[1] = &rowptrs[2 * DCTSIZE];  // U rows (DCTSIZE)
     yuv[2] = &rowptrs[3 * DCTSIZE];  // V rows (DCTSIZE)

@@ -10,6 +10,7 @@
 
 #include "include/core/SkPicture.h"
 #include "include/core/SkRefCnt.h"
+#include "include/core/SkSpan.h"
 #include "include/private/SkTArray.h"
 
 #include <atomic>
@@ -30,8 +31,13 @@ public:
     SkCaptureManager();
 
     SkCanvas* makeCaptureCanvas(SkCanvas* canvas);
-    void snapPictures();
-    void snapPicture(SkSurface*);
+
+    // Called when the surface associated with a capture canvas is deleted so we clear it from
+    // tracked canvases.
+    void deregisterCaptureCanvas(SkCanvas* canvas);
+
+    // TODO: Take in a SkPixelStorage ID instead
+    sk_sp<SkPicture> snapPicture(SkSurface*);
 
     void toggleCapture(bool capturing);
 
@@ -39,10 +45,26 @@ public:
         return fIsCurrentlyCapturing;
     }
 
+    /**
+     * Snaps and returns draws from tracked canvases whose backing PixelStorage matches any
+     * of the given IDs. This allows callers (such as Recorder::snap()) to isolate and capture draws
+     * for only the subset of active surfaces.
+     *
+     * @param storageIds The PixelStorage IDs of the surfaces whose pending draws should be snapped.
+     */
+    skia_private::TArray<sk_sp<SkPicture>> snapDrawTasksForStorageIDs(
+            SkSpan<const uint32_t> storageIds);
+    void onInsertRecording(const skia_private::TArray<sk_sp<SkPicture>>& capturedPictures);
+
     sk_sp<SkCapture> getLastCapture() const;
 
 private:
-    void processCanvasContent(SkCaptureCanvas*);
+    // Captures draws left in the SkCaptureCanvas' recording canvas. If capture ends before the
+    // client snaps a given Recorder, we want to grab the remaining draw commands so we don't lose
+    // anything.
+    // TODO:  Capture draws that were snapped in unsubmitted Recordings.
+    void captureUninsertedDrawTasks();
+    sk_sp<SkPicture> snapAndIncrement(SkCaptureCanvas*);
 
     std::atomic<bool> fIsCurrentlyCapturing = false;
     skia_private::TArray<std::unique_ptr<SkCaptureCanvas>> fTrackedCanvases;

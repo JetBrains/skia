@@ -7,6 +7,7 @@
 
 #include "src/gpu/graphite/GraphicsPipeline.h"
 
+#include "include/private/SkAttributes.h"
 #include "src/core/SkTraceEvent.h"
 #include "src/gpu/graphite/ContextUtils.h"
 #include "src/gpu/graphite/GraphicsPipelineDesc.h"
@@ -31,7 +32,7 @@ GraphicsPipeline::~GraphicsPipeline() {
 #if defined(SK_PIPELINE_LIFETIME_LOGGING)
     static const char* kNames[2] = { "DeletionN", "DeletionP" };
     TRACE_EVENT_INSTANT2("skia.gpu",
-                         TRACE_STR_STATIC(kNames[this->fromPrecompile()]),
+                         TRACE_STR_STATIC(SK_UNSAFE_TODO(kNames[this->fromPrecompile()])),
                          TRACE_EVENT_SCOPE_THREAD,
                          "key", this->getPipelineInfo().fUniqueKeyHash,
                          "compilationID", this->getPipelineInfo().fCompilationID);
@@ -46,7 +47,7 @@ GraphicsPipeline::PipelineInfo::PipelineInfo(
         : fDstReadStrategy(shaderInfo.dstReadStrategy())
         , fNumFragTexturesAndSamplers(shaderInfo.numFragmentTexturesAndSamplers())
         , fHasCombinedUniforms(shaderInfo.hasCombinedUniforms())
-        , fHasGradientBuffer(shaderInfo.hasGradientBuffer())
+        , fStorageBufferStages(shaderInfo.storageBufferStages())
         , fUniqueKeyHash(uniqueKeyHash)
         , fCompilationID(compilationID)
         , fFromPrecompile(pipelineCreationFlags & PipelineCreationFlags::kForPrecompilation) {

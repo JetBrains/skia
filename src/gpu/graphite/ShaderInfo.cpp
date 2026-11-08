@@ -7,14 +7,19 @@
 
 #include "src/gpu/graphite/ShaderInfo.h"
 
+#include "include/core/SkMesh.h"
+#include "include/private/SkAttributes.h"
+#include "src/core/SkMeshPriv.h"
 #include "src/gpu/BlendFormula.h"
 #include "src/gpu/graphite/ContextUtils.h"
 #include "src/gpu/graphite/PaintParamsKey.h"
 #include "src/gpu/graphite/RenderPassDesc.h"
 #include "src/gpu/graphite/Renderer.h"
+#include "src/gpu/graphite/RuntimeEffectDictionary.h"
 #include "src/gpu/graphite/ShaderCodeDictionary.h"
 #include "src/gpu/graphite/TextureFormat.h"
 #include "src/gpu/graphite/UniformManager.h"
+#include "src/gpu/graphite/render/MeshRenderStep.h"
 #include "src/sksl/SkSLString.h"
 #include "src/sksl/SkSLUtil.h"
 
@@ -300,6 +305,164 @@ std::string emit_uniforms_from_storage_buffer(const char* indexVariableName,
     return result;
 }
 
+std::string emit_step_storage_buffer(const ResourceBindingRequirements& bindingReqs,
+                                     const RenderStep* step) {
+    // NOTE: currently no renderstep declares fsUsesStorage() = true. Only gradients use fragment
+    // shader storage, but they emit their storage buffer declaration directly inside
+    // generateFragmentSkSL(). This is redundant and will be fixed in a follow-on patch.
+    SkASSERT(!step->fsUsesStorage());
+
+    SkASSERT(step->numStorageUniforms() > 0);
+    std::string fields;
+    for (auto a : step->storageUniforms()) {
+        SkSL::String::appendf(&fields, "%s %s", SkSLTypeString(a.type()), a.name());
+        if (a.count()) {
+            fields.append("[");
+            fields.append(std::to_string(a.count()));
+            fields.append("]");
+        }
+        fields.append(";\n");
+    }
+    return SkSL::String::printf(
+            "struct StepStorageData {\n%s};\n"
+            "layout (set=%d, binding=%d) readonly buffer StepStorageBuffer {\n"
+            "    StepStorageData stepStorageData[];\n"
+            "};\n"
+            "inline StepStorageData readStepStorageData(int idx) {\n"
+            "    return stepStorageData[idx];\n"
+            "}\n"
+            "inline StepStorageData readStepStorageData(uint idx) {\n"
+            "    return stepStorageData[idx];\n"
+            "}\n",
+            fields.c_str(),
+            bindingReqs.fUniformsSetIdx,
+            bindingReqs.fStorageBufferBinding);
+}
+
+std::string emit_storage_fallback_texture(const ResourceBindingRequirements& bindingReqs,
+                                          const RenderStep* step) {
+    if (!step || step->storageUniforms().empty()) {
+        return "";
+    }
+
+    std::string fields;
+    for (auto a : step->storageUniforms()) {
+        // Array storage uniforms are not supported by the texture fallback.
+        SkASSERT(a.count() == 0);
+        SkSL::String::appendf(&fields, "    %s %s;\n", SkSLTypeString(a.type()), a.name());
+    }
+
+    static const char* kSwizzles[] = {"x", "y", "z", "w"};
+    std::string fieldAssignments;
+
+    // Force Std430 rules to match the struct layout defined by RenderStep.
+    UniformOffsetCalculator calculator = UniformOffsetCalculator::ForStruct(Layout::kStd430);
+
+    for (auto a : step->storageUniforms()) {
+        const int byteOffset = calculator.advanceOffset(a.type(), a.count());
+        const int floatOffset = byteOffset / 4;
+        const int startTexel = floatOffset / 4;
+        const int startComp = floatOffset % 4;
+
+        const int mat = SkSLTypeMatrixSize(a.type());
+        const int vec = SkSLTypeVecLength(a.type());
+
+        std::string expr;
+        if (mat == 2) {
+            if (startComp == 0) {
+                expr = SkSL::String::printf("float2x2(t%d.xy, t%d.zw)", startTexel, startTexel);
+            } else {
+                expr = SkSL::String::printf(
+                        "float2x2(t%d.zw, t%d.xy)", startTexel, startTexel + 1);
+            }
+        } else if (mat == 3) {
+            // std140/std430 dictates 16-byte alignment for 3-component column vectors.
+            SkASSERT(startComp == 0);
+            expr = SkSL::String::printf("float3x3(t%d.xyz, t%d.xyz, t%d.xyz)",
+                                        startTexel,
+                                        startTexel + 1,
+                                        startTexel + 2);
+        } else if (mat == 4) {
+            // std140/std430 dictates 16-byte alignment for 4-component column vectors.
+            SkASSERT(startComp == 0);
+            expr = SkSL::String::printf("float4x4(t%d, t%d, t%d, t%d)",
+                                        startTexel,
+                                        startTexel + 1,
+                                        startTexel + 2,
+                                        startTexel + 3);
+        } else if (vec == 4) {
+            // std140/std430 dictates 16-byte alignment for 4-component vectors.
+            SkASSERT(startComp == 0);
+            expr = SkSL::String::printf("t%d", startTexel);
+        } else if (vec == 3) {
+            // std140/std430 dictates 16-byte alignment for vec3; startComp must be 0 to avoid OOB
+            // swizzles.
+            SkASSERT(startComp == 0);
+            expr = SkSL::String::printf("t%d.%s%s%s",
+                                        startTexel,
+                                        SK_UNSAFE_TODO(kSwizzles[startComp]),
+                                        SK_UNSAFE_TODO(kSwizzles[startComp + 1]),
+                                        SK_UNSAFE_TODO(kSwizzles[startComp + 2]));
+        } else if (vec == 2) {
+            expr = SkSL::String::printf("t%d.%s%s",
+                                        startTexel,
+                                        SK_UNSAFE_TODO(kSwizzles[startComp]),
+                                        SK_UNSAFE_TODO(kSwizzles[startComp + 1]));
+        } else {
+            expr = SkSL::String::printf("t%d.%s", startTexel, SK_UNSAFE_TODO(kSwizzles[startComp]));
+        }
+
+        switch (a.type()) {
+            case SkSLType::kInt:
+            case SkSLType::kInt2:
+            case SkSLType::kInt3:
+            case SkSLType::kInt4:
+                expr = "floatBitsToInt(" + expr + ")";
+                break;
+            case SkSLType::kUInt:
+            case SkSLType::kUInt2:
+            case SkSLType::kUInt3:
+            case SkSLType::kUInt4:
+                expr = "floatBitsToUint(" + expr + ")";
+                break;
+            default:
+                break;
+        }
+
+        SkSL::String::appendf(&fieldAssignments, "    data.%s = %s;\n", a.name(), expr.c_str());
+    }
+
+    int nTexels = (calculator.size() + 15) / 16;
+    std::string texelLoads = SkSL::String::printf("    const int texWidth = %d;\n",
+                                                  bindingReqs.fMaxFallbackTextureSize);
+    for (int i = 0; i < nTexels; ++i) {
+        SkSL::String::appendf(
+                &texelLoads,
+                "    int linearIdx%d = index * %d + %d;\n"
+                "    int2 coords%d = int2(linearIdx%d %% texWidth, linearIdx%d / texWidth);\n"
+                "    float4 t%d = float4(textureRead(storageFallbackTexture, uint2(coords%d)));\n",
+                i, nTexels, i, i, i, i, i, i);
+    }
+
+    return SkSL::String::printf(
+            "layout(set=%d, binding=%d) readonly texture2D storageFallbackTexture;\n"
+            "struct StepStorageData {\n%s};\n"
+            "StepStorageData readStepStorageData(int index) {\n"
+            "%s"
+            "    StepStorageData data;\n"
+            "%s"
+            "    return data;\n"
+            "}\n"
+            "inline StepStorageData readStepStorageData(uint index) {\n"
+            "    return readStepStorageData(int(index));\n"
+            "}\n",
+            bindingReqs.fUniformsSetIdx,
+            bindingReqs.fStorageBufferBinding,
+            fields.c_str(),
+            texelLoads.c_str(),
+            fieldAssignments.c_str());
+}
+
 void append_sampler_descs(const SkSpan<const uint32_t> samplerData,
                           skia_private::TArray<SamplerDesc>& outDescs) {
     // Sampler data consists of variable-length SamplerDesc representations which can differ based
@@ -322,7 +485,8 @@ void append_sampler_descs(const SkSpan<const uint32_t> samplerData,
             samplerDescLength = usesExternalFormat ? SamplerDesc::kInt32sNeededExternalFormat
                                                    : SamplerDesc::kInt32sNeededKnownFormat;
             // Populate a SamplerDesc with samplerDescLength quantity of immutable sampler data
-            memcpy(&desc, samplerData.data() + i, samplerDescLength * sizeof(uint32_t));
+            SK_UNSAFE_TODO(
+                    memcpy(&desc, samplerData.data() + i, samplerDescLength * sizeof(uint32_t)));
         }
         outDescs.push_back(desc);
         i += samplerDescLength;
@@ -403,25 +567,27 @@ SkSLType sksl_type_for_lifted_expression(
 
 std::string emit_varyings(const RenderStep* step,
                           const char* direction,
+                          const RootNodesInfo& roots,
                           SkSpan<const LiftedExpression> liftedExpressions,
                           bool emitSsboIndexVarying,
                           bool emitLocalCoordsVarying) {
     std::string result;
     int location = 0;
 
-    auto appendVarying = [&](const Varying& v) {
+    auto appendVarying = [&](const Varying& v, const char* mangleSuffix = "") {
         const char* interpolation;
         switch (v.interpolation()) {
             case Interpolation::kPerspective: interpolation = ""; break;
             case Interpolation::kLinear:      interpolation = "noperspective "; break;
             case Interpolation::kFlat:        interpolation = "flat "; break;
         }
-        SkSL::String::appendf(&result, "layout(location=%d) %s %s%s %s;\n",
+        SkSL::String::appendf(&result, "layout(location=%d) %s %s%s %s%s;\n",
                               location++,
                               direction,
                               interpolation,
                               SkSLTypeString(v.gpuType()),
-                              v.name());
+                              v.name(),
+                              mangleSuffix);
     };
 
     if (emitSsboIndexVarying) {
@@ -442,8 +608,16 @@ std::string emit_varyings(const RenderStep* step,
         }
     }
 
-    for (auto v : step->varyings()) {
+    for (const Varying& v : step->varyings()) {
         appendVarying(v);
+    }
+
+    if (roots.fMeshSpec) {
+        for (const SkMeshSpecification::Varying& v
+                : SkMeshSpecificationPriv::Varyings(*roots.fMeshSpec)) {
+            SkSLType type = SkMeshSpecificationPriv::VaryingTypeAsSLType(v.type);
+            appendVarying({v.name.c_str(), type}, MeshRenderStep::kMeshVaryingMangleSuffix);
+        }
     }
 
     return result;
@@ -756,12 +930,12 @@ static constexpr skgpu::BlendInfo gBlendTable[kSkBlendModeCount] = {
 struct ShaderInfo::SharedGeneratorData {
     SharedGeneratorData(const Caps* caps,
                         const ShaderCodeDictionary* dict,
+                        const RuntimeEffectDictionary* rteDict,
                         SkArenaAlloc* alloc,
                         const RenderStep* step,
                         UniquePaintParamsID paintID,
                         const char* uniformSsboIndex)
-            : fRootNodes(SkSpan<const ShaderNode*>())
-            , fHasStepUniforms(step->numUniforms() > 0) {
+            : fHasStepUniforms(step->numUniforms() > 0) {
 
         // Decompress Root Nodes & Determine Local Coords
         if (paintID.isValid()) {
@@ -772,18 +946,38 @@ struct ShaderInfo::SharedGeneratorData {
             const int availableVaryings =
                     caps->maxVaryings() - kFixedVaryings - step->varyings().size();
 
-            fRootNodes = key.getRootNodes(caps, dict, alloc, availableVaryings);
+            bool canLiftCoords = !step->fragmentColorSkSLLocalCoordsVariable();
+            fRootsInfo =
+                    key.getRootNodes(caps, dict, rteDict, alloc, availableVaryings, canLiftCoords);
 
-            fNeedsLocalCoords = !fRootNodes.empty() &&
-                               SkToBool(fRootNodes[0]->requiredFlags() &
-                               SnippetRequirementFlags::kLocalCoords);
+            fNeedsLocalCoords = fRootsInfo.fSrcColor &&
+                                SkToBool(fRootsInfo.fSrcColor->requiredFlags() &
+                                SnippetRequirementFlags::kLocalCoords);
         } else {
             fNeedsLocalCoords = false;
         }
 
+        skia_private::TArray<Uniform> allStepUniforms;
+        for (const Uniform& u : step->uniforms()) {
+            allStepUniforms.push_back(u);
+        }
+
+        // Declare SkMesh uniforms after the render step uniforms are declared so the
+        // MeshRenderStep can write the uniforms and have them an the expected location.
+        if (fRootsInfo.fMeshSpec) {
+            SkASSERT(fHasStepUniforms);
+            SkASSERT(fRootsInfo.fMeshShader);
+            SkASSERT(step->renderStepID() == RenderStep::RenderStepID::kMesh);
+            SkSpan<const Uniform> converted = ShaderCodeDictionary::ConvertRuntimeEffectUniforms(
+                                                    fRootsInfo.fMeshSpec->uniforms(), alloc);
+            for (const Uniform& u : converted) {
+                allStepUniforms.push_back(u);
+            }
+        }
+
         // Lift Expressions & Check Uniforms
         bool vsHasLiftedPaintUniforms = false;
-        fLiftedExpr = collect_lifted_expressions(fRootNodes);
+        fLiftedExpr = collect_lifted_expressions(fRootsInfo.fRoots);
         for (const auto& expr : fLiftedExpr) {
             if (!expr.fNode->entry()->fUniforms.empty()) {
                 vsHasLiftedPaintUniforms = true;
@@ -800,14 +994,13 @@ struct ShaderInfo::SharedGeneratorData {
         int numPaintUniforms = 0;
         int numUnliftedPaintUniforms = 0;
         bool wrotePaintColor = false;
-        SkSpan<const Uniform> allStepUniforms = step->uniforms();
         const ResourceBindingRequirements& bindingReqs = caps->resourceBindingRequirements();
 
         if (useUniformStorageBuffer) {
             fSharedPreamble = emit_combined_storage_buffer(
                 bindingReqs.fUniformsSetIdx,
                 bindingReqs.fCombinedUniformBufferBinding,
-                fRootNodes,
+                fRootsInfo.fRoots,
                 allStepUniforms,
                 &numPaintUniforms,
                 &numUnliftedPaintUniforms,
@@ -817,7 +1010,7 @@ struct ShaderInfo::SharedGeneratorData {
                 bindingReqs.fUniformsSetIdx,
                 bindingReqs.fCombinedUniformBufferBinding,
                 bindingReqs.fUniformBufferLayout,
-                fRootNodes,
+                fRootsInfo.fRoots,
                 allStepUniforms,
                 &numPaintUniforms,
                 &numUnliftedPaintUniforms,
@@ -839,8 +1032,8 @@ struct ShaderInfo::SharedGeneratorData {
         }
     }
 
-    // The decompressed shader tree
-    SkSpan<const ShaderNode*> fRootNodes;
+    // The shader tree decompressed into explicit root nodes.
+    RootNodesInfo fRootsInfo;
 
     // The expressions lifted from the shader tree
     // Changed from const& to value to allow ownership
@@ -880,12 +1073,26 @@ std::unique_ptr<ShaderInfo> ShaderInfo::Make(const Caps* caps,
                                               hasFragShader ? rpDesc.fDstReadStrategy
                                                             : DstReadStrategy::kNoneRequired));
 
-    // This arena holds all the ShaderNodes. It must live for the duration of 'Make' so the
-    // rootNodes span is valid when passed to helpers.
-    SkArenaAlloc shaderNodeAlloc{256};
+    // This arena holds all the ShaderNodes and mesh uniform names. It must live for the
+    // duration of 'Make' so the rootNodes span is valid when passed to helpers.
+    SkArenaAlloc alloc{256};
     SharedGeneratorData sharedData(
-            caps, dict, &shaderNodeAlloc, step, paintID, result->uniformSsboIndex());
+            caps, dict, rteDict, &alloc, step, paintID, result->uniformSsboIndex());
     result->fHasCombinedUniforms = sharedData.fHasStepUniforms || sharedData.fHasPaintUniforms;
+
+    result->fAppendAttrs.reserve_exact(
+            step->appendAttributes().size() + (sharedData.fRootsInfo.fMeshSpec
+                    ? sharedData.fRootsInfo.fMeshSpec->attributes().size()
+                    : 0));
+    for (const Attribute& renderStepAttr: step->appendAttributes()) {
+        result->fAppendAttrs.push_back(renderStepAttr);
+    }
+    if (sharedData.fRootsInfo.fMeshSpec) {
+        for (const SkMeshSpecification::Attribute& specAttr
+                : sharedData.fRootsInfo.fMeshSpec->attributes()) {
+            result->fAppendAttrs.push_back(Attribute::MakeFromSkMeshAttribute(specAttr));
+        }
+    }
 
     SkString paintLabel = dict->idToString(caps, paintID);
     if (hasFragShader) {
@@ -900,6 +1107,14 @@ std::unique_ptr<ShaderInfo> ShaderInfo::Make(const Caps* caps,
                                      sharedData);
     } else {
         result->fBlendInfo.fWritesColor = false;
+    }
+
+    result->fStorageBufferStages |= step->storageBufferStages();
+
+    // TODO(michaelludwig): Modify the depth portion of the DepthStencilSettings depending on
+    // whether or not depth is going to be useful (and whether or not the render pass has it).
+    if (rpDesc.fDepthStencilAttachment.fFormat != TextureFormat::kUnsupported) {
+        result->fDepthStencilSettings = step->depthStencilSettings();
     }
 
     result->generateVertexSkSL(caps, step, sharedData);
@@ -962,37 +1177,39 @@ void ShaderInfo::generateFragmentSkSL(const Caps* caps,
                                       skia_private::TArray<SamplerDesc>* outDescs,
                                       const SharedGeneratorData& sharedData) {
 #if defined(SK_DEBUG)
-    // Validate the root node structure of the key.
-    SkASSERT(sharedData.fRootNodes.size() == 2 || sharedData.fRootNodes.size() == 3);
-    // First node produces the source color (all snippets return a half4), so we just require that
-    // its signature takes no extra args or just local coords.
-    const ShaderSnippet* srcSnippet = dict->getEntry(sharedData.fRootNodes[0]->codeSnippetId());
-    SkASSERT(!srcSnippet->needsBlenderDstColor());
+    // Validate the root count of the key.
+    SkASSERT(sharedData.fRootsInfo.fRoots.size() >= 2 && sharedData.fRootsInfo.fRoots.size() <= 4);
+    // With source color node all snippets return a half4, so we just require that its signature
+    // takes no extra args or just local coords.
+    SkASSERT(sharedData.fRootsInfo.fSrcColor && sharedData.fRootsInfo.fFinalBlend);
+    const ShaderSnippet* srcSnippet
+            = dict->getEntry(sharedData.fRootsInfo.fSrcColor->codeSnippetId());
     // TODO(b/349997190): Once SkEmptyShader doesn't use the passthrough snippet, we can assert
     // that srcSnippet->needsPriorStageOutput() is false.
     SkASSERT(!srcSnippet->needsBlenderDstColor());
-    // Second node is the final blender, so it must take both the src color and dst color, and not
-    // any local coordinate.
-    const ShaderSnippet* blendSnippet = dict->getEntry(sharedData.fRootNodes[1]->codeSnippetId());
+    // Final blender node must take both the src color and dst color, and not any local coordinate.
+    const ShaderSnippet* blendSnippet
+            = dict->getEntry(sharedData.fRootsInfo.fFinalBlend->codeSnippetId());
     SkASSERT(blendSnippet->needsPriorStageOutput() && blendSnippet->needsBlenderDstColor());
     SkASSERT(!blendSnippet->needsLocalCoords());
-    // Optional third node is the clip
-    const ShaderSnippet* clipSnippet = sharedData.fRootNodes.size() > 2 ?
-            dict->getEntry(sharedData.fRootNodes[2]->codeSnippetId()) : nullptr;
+    const ShaderSnippet* clipSnippet = sharedData.fRootsInfo.fClip ?
+            dict->getEntry(sharedData.fRootsInfo.fClip->codeSnippetId()) : nullptr;
     SkASSERT(!clipSnippet ||
              (!clipSnippet->needsPriorStageOutput() && !clipSnippet->needsBlenderDstColor()));
 #endif
 
     // Check for unexpected corruption / illegal instructions occurring in the wild.
-    SkASSERTF_RELEASE(sharedData.fRootNodes.size() == 2 || sharedData.fRootNodes.size() == 3,
-                      "root node size = %zu, label = %s", sharedData.fRootNodes.size(), label);
+    SkASSERTF_RELEASE((sharedData.fRootsInfo.fRoots.size() >= 2 &&
+                       sharedData.fRootsInfo.fRoots.size() <= 4) &&
+                      sharedData.fRootsInfo.fSrcColor && sharedData.fRootsInfo.fFinalBlend,
+                      "root node size = %zu, label = %s",
+                      sharedData.fRootsInfo.fRoots.size(), label);
 
     // Extract the root nodes for clarity
-    const ShaderNode* const srcColorRoot = sharedData.fRootNodes[0];
-    const ShaderNode* const finalBlendRoot = sharedData.fRootNodes[1];
+    const ShaderNode* const srcColorRoot = sharedData.fRootsInfo.fSrcColor;
+    const ShaderNode* const finalBlendRoot = sharedData.fRootsInfo.fFinalBlend;
     const int32_t finalBlendRootSnippetId = finalBlendRoot->codeSnippetId();
-    const ShaderNode* const clipRoot =
-            sharedData.fRootNodes.size() > 2 ? sharedData.fRootNodes[2] : nullptr;
+    const ShaderNode* const clipRoot = sharedData.fRootsInfo.fClip;
 
     // Determine the algorithm for final blending: direct HW blending, coverage-modified HW
     // blending (w/ or w/o dual-source blending) or via dst-read requirement.
@@ -1030,6 +1247,7 @@ void ShaderInfo::generateFragmentSkSL(const Caps* caps,
     const ResourceBindingRequirements& bindingReqs = caps->resourceBindingRequirements();
     fsPreamble += emit_intrinsic_constants(bindingReqs);
     fsPreamble += emit_varyings(step, "in",
+                                sharedData.fRootsInfo,
                                 sharedData.fLiftedExpr,
                                 sharedData.fHasSsboIndexVarying,
                                 sharedData.fNeedsLocalCoords);
@@ -1050,25 +1268,36 @@ void ShaderInfo::generateFragmentSkSL(const Caps* caps,
                 /*binding=*/0);
     }
 
-    bool useGradientBuffer = caps->gradientBufferSupport() &&
-                              (allReqFlags & SnippetRequirementFlags::kGradientBuffer);
-    if (useGradientBuffer) {
+    bool useStorageBuffer = caps->storageBufferSupport() &&
+                            (allReqFlags & SnippetRequirementFlags::kStorageBuffer);
+    SkASSERT(caps->storageBufferSupport() ||
+             !SkToBool(allReqFlags & SnippetRequirementFlags::kStorageBuffer));
+    if (useStorageBuffer) {
         SkSL::String::appendf(&fsPreamble,
-                              "layout (set=%d, binding=%d) readonly buffer FSGradientBuffer {\n"
+                              "layout (set=%d, binding=%d) readonly buffer FSStorageBuffer {\n"
                               "float %s[];\n"
                               "};\n",
                               bindingReqs.fUniformsSetIdx,
-                              bindingReqs.fGradientBufferBinding,
-                              ShaderInfo::kGradientBufferName);
-        fHasGradientBuffer = true;
+                              bindingReqs.fStorageBufferBinding,
+                              ShaderInfo::kStorageBufferName);
+        fStorageBufferStages |= PipelineStageFlags::kFragmentShader;
+    }
+
+    if (step->fsUsesStorage() && step->numStorageUniforms() > 0) {
+        if (caps->storageBufferSupport()) {
+            fsPreamble += emit_step_storage_buffer(bindingReqs, step);
+        } else {
+            fsPreamble += emit_storage_fallback_texture(bindingReqs, step);
+        }
+        fStorageBufferStages |= PipelineStageFlags::kFragmentShader;
     }
 
     const bool useDstSampler = fDstReadStrategy == DstReadStrategy::kTextureCopy ||
                                fDstReadStrategy == DstReadStrategy::kTextureSample;
     {
         int binding = 0;
-        fsPreamble += emit_textures_and_samplers(bindingReqs, sharedData.fRootNodes, &binding,
-                                               outDescs);
+        fsPreamble += emit_textures_and_samplers(bindingReqs, sharedData.fRootsInfo.fRoots,
+                                                 &binding, outDescs);
         int paintTextureCount = binding;
         if (step->hasTextures()) {
             fsPreamble += step->texturesAndSamplersSkSL(bindingReqs, &binding);
@@ -1101,7 +1330,11 @@ void ShaderInfo::generateFragmentSkSL(const Caps* caps,
     // Emit preamble declarations and helper functions required for snippets. In the default case
     // this adds functions that bind a node's specific mangled uniforms to the snippet's
     // implementation in the SkSL modules.
-    emit_preambles(*this, sharedData.fRootNodes, /*treeLabel=*/"", &fsPreamble);
+    emit_preambles(*this, sharedData.fRootsInfo.fRoots, /*treeLabel=*/"", &fsPreamble);
+    if (sharedData.fRootsInfo.fMeshShader) {
+        fsPreamble += ShaderCodeDictionary::GenerateMeshFSPreamble(
+                            *this, sharedData.fRootsInfo.fMeshShader);
+    }
 
     std::string mainBody = "void main() {";
 
@@ -1112,10 +1345,12 @@ void ShaderInfo::generateFragmentSkSL(const Caps* caps,
                               RenderStep::ssboIndexVarying());
     }
 
-    if (sharedData.fRootNodes[0]->requiredFlags() & SnippetRequirementFlags::kPrimitiveColor) {
+    if (srcColorRoot->requiredFlags() & SnippetRequirementFlags::kPrimitiveColor) {
         SkASSERT(step->emitsPrimitiveColor());
         mainBody += "half4 primitiveColor;";
-        mainBody += step->fragmentColorSkSL();
+        mainBody += step->fragmentColorSkSL(sharedData.fRootsInfo);
+    } else if (step->fragmentColorSkSLLocalCoordsVariable()) {
+        mainBody += step->fragmentColorSkSL(sharedData.fRootsInfo);
     }
     // else the RenderStep may be producing a primitive color but the paint is not consuming it
     // so just skip injecting that SkSL entirely.
@@ -1124,7 +1359,9 @@ void ShaderInfo::generateFragmentSkSL(const Caps* caps,
     // root nodes should--at most--be depending on the coordinate when "needsLocalCoords" is true.
     // If the PaintParamsKey violates that structure, this will produce SkSL compile errors.
     ShaderSnippet::Args args = ShaderSnippet::kDefaultArgs;
-    args.fFragCoord = "localCoordsVar";  // the varying added in emit_varyings()
+    args.fFragCoord = step->fragmentColorSkSLLocalCoordsVariable()
+                            ? step->fragmentColorSkSLLocalCoordsVariable()
+                            : "localCoordsVar";  // the varying added in emit_varyings()
     // TODO(b/349997190): The paint root node should not depend on any prior stage's output, but
     // it can happen with how SkEmptyShader is currently mapped to `sk_passthrough`. In this case
     // it requires that prior stage color to be transparent black. When SkEmptyShader can instead
@@ -1171,7 +1408,7 @@ void ShaderInfo::generateFragmentSkSL(const Caps* caps,
         // Either direct HW blending or a dst-read w/o any extra coverage. In both cases we just
         // need to assign directly to sk_FragCoord and update the HW blend info to finalBlendMode.
         SkASSERT(finalBlendMode.has_value());
-        fBlendInfo = gBlendTable[static_cast<int>(*finalBlendMode)];
+        fBlendInfo = SK_UNSAFE_TODO(gBlendTable[static_cast<int>(*finalBlendMode)]);
         SkSL::String::appendf(&mainBody, "sk_FragColor = %s;", args.fPriorStageOutput.c_str());
     } else {
         // Accumulate the output coverage. This will either modify the src color and secondary
@@ -1219,7 +1456,7 @@ void ShaderInfo::generateFragmentSkSL(const Caps* caps,
 
             // Use kSrc HW BlendInfo and do the coverage blend with dst in the shader.
             SkASSERT(finalBlendMode.has_value() && finalBlendMode.value() == SkBlendMode::kSrc);
-            fBlendInfo = gBlendTable[static_cast<int>(*finalBlendMode)];
+            fBlendInfo = SK_UNSAFE_TODO(gBlendTable[static_cast<int>(*finalBlendMode)]);
             SkSL::String::appendf(
                     &mainBody,
                     "sk_FragColor = %s * outputCoverage + dstColor * (1.0 - outputCoverage);",
@@ -1236,7 +1473,7 @@ void ShaderInfo::generateFragmentSkSL(const Caps* caps,
             // the correct output.
             if (finalBlendMode > SkBlendMode::kLastCoeffMode) {
                 SkASSERT(finalCoverage == Coverage::kSingleChannel);
-                fBlendInfo = gBlendTable[static_cast<int>(*finalBlendMode)];
+                fBlendInfo = SK_UNSAFE_TODO(gBlendTable[static_cast<int>(*finalBlendMode)]);
                 mainBody += emit_advanced_blend_color_output("sk_FragColor", outColor);
             } else {
                 // Porter-Duff blend modes can utilize BlendFormula.
@@ -1291,12 +1528,27 @@ void ShaderInfo::generateVertexSkSL(const Caps* caps,
     vsPreamble = emit_intrinsic_constants(bindingReqs);
     // Varyings needed by RenderStep and potentially lifted expressions
     vsPreamble += emit_varyings(step, "out",
+                                sharedData.fRootsInfo,
                                 sharedData.fLiftedExpr,
                                 sharedData.fHasSsboIndexVarying,
                                 sharedData.fNeedsLocalCoords);
 
+    // Declare vertex storage buffer (or fallback texture) if the RenderStep has storage uniforms
+    if (step->vsUsesStorage() && step->numStorageUniforms() > 0) {
+        if (caps->storageBufferSupport()) {
+            vsPreamble += emit_step_storage_buffer(bindingReqs, step);
+        } else {
+            vsPreamble += emit_storage_fallback_texture(bindingReqs, step);
+        }
+        fStorageBufferStages |= PipelineStageFlags::kVertexShader;
+    }
+
     // Add vertex attributes
-    if (step->numStaticAttributes() > 0 || step->numAppendAttributes() > 0) {
+    SkSpan<const Attribute> staticAttrs = step->staticAttributes();
+    SkSpan<const Attribute> appendAttrs = this->appendAttributes().empty()
+                                                ? step->appendAttributes()
+                                                : this->appendAttributes();
+    if (!staticAttrs.empty() || !appendAttrs.empty()) {
         int attr = 0;
         auto add_attrs = [&vsPreamble, &attr](SkSpan<const Attribute> attrs) {
             for (auto a : attrs) {
@@ -1305,18 +1557,23 @@ void ShaderInfo::generateVertexSkSL(const Caps* caps,
                 SkSL::String::appendf(&vsPreamble, " %s;\n", a.name());
             }
         };
-        if (step->numStaticAttributes() > 0) {
+        if (!staticAttrs.empty()) {
 #if defined(SK_DEBUG)
             vsPreamble.append("// static attrs\n");
 #endif
-            add_attrs(step->staticAttributes());
+            add_attrs(staticAttrs);
         }
-        if (step->numAppendAttributes() > 0) {
+        if (!appendAttrs.empty()) {
 #if defined(SK_DEBUG)
             vsPreamble.append("// append attrs\n");
 #endif
-            add_attrs(step->appendAttributes());
+            add_attrs(appendAttrs);
         }
+    }
+
+    if (sharedData.fRootsInfo.fMeshShader) {
+        vsPreamble += ShaderCodeDictionary::GenerateMeshVSPreamble(
+                            *this, sharedData.fRootsInfo.fMeshShader);
     }
 
     // Vertex shader function declaration
@@ -1327,7 +1584,7 @@ void ShaderInfo::generateVertexSkSL(const Caps* caps,
     // We define the SSBO index variable immediately if the VS is using storage buffers. This covers
     // both the "Step Uniforms" case and the "Lifted Uniforms Only" case.
     if (sharedData.fUseUniformStorageBufferVS) {
-        SkSL::String::appendf(&mainBody, "uint %s = %s;\n", this->uniformSsboIndex(),
+        SkSL::String::appendf(&mainBody, "%s = %s;\n", this->uniformSsboIndex(),
                                   RenderStep::ssboIndexAttribute());
         if (sharedData.fHasStepUniforms) {
             mainBody +=
@@ -1336,7 +1593,7 @@ void ShaderInfo::generateVertexSkSL(const Caps* caps,
     }
 
     // Inject RenderStep's main vertex logic
-    mainBody += step->vertexSkSL();
+    mainBody += step->vertexSkSL(sharedData.fRootsInfo);
 
     // Calculate sk_Position
     mainBody +=
@@ -1397,5 +1654,13 @@ void ShaderInfo::generateVertexSkSL(const Caps* caps,
     fVertexSkSL += "\n";
     fVertexSkSL += mainBody;
 }
+
+
+#if defined(GPU_TEST_UTILS)
+std::string ShaderInfo::EmitStorageFallbackTexture(const ResourceBindingRequirements& bindingReqs,
+                                                   const RenderStep* step) {
+    return emit_storage_fallback_texture(bindingReqs, step);
+}
+#endif
 
 }  // namespace skgpu::graphite

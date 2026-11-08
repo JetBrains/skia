@@ -190,7 +190,7 @@ func (b *TaskBuilder) cipdFromDEPS(pkgName string) {
 func (b *TaskBuilder) useIsolatedAssets() bool {
 	// Only do this on the RPIs for now. Other, faster machines shouldn't
 	// see much benefit and we don't need the extra complexity, for now.
-	if b.Os("ChromeOS", "iOS") || b.MatchOs("Android") {
+	if b.Os("ChromeOS") || b.MatchOs("Android", "iOS") {
 		return true
 	}
 	return false
@@ -254,12 +254,13 @@ func (b *TaskBuilder) usesCCache() {
 // shellsOutToBazel returns true if this task normally uses GN but some step
 // shells out to Bazel to build stuff, e.g. rust code.
 func (b *TaskBuilder) shellsOutToBazel() bool {
-	return b.ExtraConfig("Fontations", "RustALL", "RustPNG", "ICU4X")
+	return b.ExtraConfig("Fontations", "RustALL", "RustPNG", "RustPNGAndroid", "ICU4X")
 }
 
 func (b *TaskBuilder) usesCMake() {
 	archToPkg := map[string]string{
 		"Ubuntu24.04": "cmake_linux",
+		"Ubuntu26.04": "cmake_linux",
 		"Mac":         "cmake_mac",
 		"Win":         "cmake_win",
 	}
@@ -331,10 +332,14 @@ func (b *TaskBuilder) usesDocker() {
 	b.usesPython()
 }
 
-// usesGSUtil adds the gsutil dependency from CIPD and puts it on PATH.
-func (b *TaskBuilder) usesGSUtil() {
-	b.asset("gsutil")
-	b.addToPATH("gsutil/gsutil")
+// usesGCloud adds the gcloud dependency from CIPD and puts it on PATH.
+func (b *TaskBuilder) usesGCloud() {
+	b.cipd(&specs.CipdPackage{
+		Name:    "infra/3pp/tools/gcloud/${platform}",
+		Version: "version:3@577.0.0.chromium.4",
+		Path:    "cipd_bin_packages/gcloud",
+	})
+	b.addToPATH("cipd_bin_packages/gcloud/bin")
 }
 
 // needsFontsForParagraphTests downloads the skparagraph CIPD package to

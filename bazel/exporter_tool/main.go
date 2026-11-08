@@ -28,6 +28,7 @@ var gniExportDescs = []exporter.GNIExportDesc{
 		{Var: "skia_codec_shared",
 			Rules: []string{
 				"//src/codec:any_decoder",
+				"//src/codec:hdr_metadata",
 				"//include/codec:any_codec_hdrs",
 			},
 		},
@@ -120,6 +121,38 @@ var gniExportDescs = []exporter.GNIExportDesc{
 				"//rust/bmp:cxx_bridge_srcs",
 			},
 		},
+		{Var: "skia_codec_rust_jpeg_public",
+			Rules: []string{
+				"//experimental/rust_jpeg/decoder:hdrs",
+			},
+		},
+		{Var: "skia_codec_rust_jpeg",
+			Rules: []string{
+				"//experimental/rust_jpeg/decoder:srcs",
+				"//experimental/rust_jpeg/decoder/impl:skjpegrustcodec_hdrs",
+				"//experimental/rust_jpeg/decoder/impl:skjpegrustcodec_srcs",
+			},
+		},
+		{Var: "skia_codec_rust_jpeg_ffi_rs_srcs",
+			Rules: []string{
+				"//experimental/rust_jpeg/ffi:rs_srcs",
+			},
+		},
+		{Var: "skia_codec_rust_jpeg_ffi_cxx_bridge_srcs",
+			Rules: []string{
+				"//experimental/rust_jpeg/ffi:cxx_bridge_srcs",
+			},
+		},
+		{Var: "skia_encode_rust_jpeg_public",
+			Rules: []string{
+				"//experimental/rust_jpeg/encoder:hdrs",
+			},
+		},
+		{Var: "skia_encode_rust_jpeg_srcs",
+			Rules: []string{
+				"//experimental/rust_jpeg/encoder:srcs",
+			},
+		},
 		{Var: "skia_codec_rust_icc_codec_srcs",
 			Rules: []string{
 				"//src/codec:rust_icc_codec_srcs",
@@ -157,6 +190,7 @@ var gniExportDescs = []exporter.GNIExportDesc{
 		{Var: "skia_core_public",
 			Rules: []string{
 				"//include/core:core_hdrs",
+				"//include/cpu:core_hdrs",
 			}},
 		{Var: "skia_core_sources",
 			Rules: []string{
@@ -342,6 +376,9 @@ var gniExportDescs = []exporter.GNIExportDesc{
 			}},
 		{Var: "skia_graphite_sparse_strips_sources",
 			Rules: []string{
+				"//src/gpu/graphite/geom:sparse_strips_hdrs",
+				"//src/gpu/graphite/render:sparse_strips_hdrs",
+				"//src/gpu/graphite/render:sparse_strips_srcs",
 				"//src/gpu/graphite/sparse_strips:sparse_strips_hdrs",
 				"//src/gpu/graphite/sparse_strips:sparse_strips_srcs",
 			}},
@@ -949,6 +986,8 @@ var gniExportDescs = []exporter.GNIExportDesc{
 			Rules: []string{"//modules/skunicode/src:runtime_srcs"}},
 		{Var: "skia_unicode_libgrapheme_sources",
 			Rules: []string{"//modules/skunicode/src:libgrapheme_srcs"}},
+		{Var: "skia_unicode_apple_sources",
+			Rules: []string{"//modules/skunicode/src:apple_srcs"}},
 		{Var: "skia_unicode_tests",
 			Rules: []string{"//modules/skunicode/tests:tests"}},
 	}},

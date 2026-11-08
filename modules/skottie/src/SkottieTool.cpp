@@ -32,6 +32,7 @@
 #include "modules/skottie/utils/SkottieUtils.h"
 #include "modules/skresources/include/SkResources.h"
 #include "modules/skshaper/utils/FactoryHelpers.h"
+#include "src/core/SkExecutors.h"
 #include "src/core/SkOSFile.h"
 #include "src/core/SkTaskGroup.h"
 #include "src/utils/SkOSPath.h"
@@ -471,10 +472,7 @@ private:
 
 } // namespace
 
-extern bool gSkUseThreadLocalStrikeCaches_IAcknowledgeThisIsIncrediblyExperimental;
-
 int main(int argc, char** argv) {
-    gSkUseThreadLocalStrikeCaches_IAcknowledgeThisIsIncrediblyExperimental = true;
     CommandLineFlags::Parse(argc, argv);
     SkGraphics::Init();
 
@@ -592,7 +590,7 @@ int main(int argc, char** argv) {
     std::vector<double> frames_ms(frame_count);
 
     const auto thread_count = FLAGS_gpu ? 0 : FLAGS_threads - 1;
-    SkTaskGroup::Enabler enabler(thread_count);
+    SkExecutors::Enabler enabler(thread_count);
 
     SkTaskGroup tg;
     {
@@ -605,27 +603,29 @@ int main(int argc, char** argv) {
             singleton_generator = FrameGenerator::Make(sink.get(), fmt, scale_matrix);
         }
 
-        tg.batch(frame_count, [&](int i) {
-            // SkTaskGroup::Enabler creates a LIFO work pool,
-            // but we want our early frames to start first.
-            i = frame_count - 1 - i;
+        for (int frame = 0; frame < frame_count; ++frame) {
+            tg.add([&, frame]() {
+                // SkExecutors::Enabler creates a LIFO work pool,
+                // but we want our early frames to start first.
+                int i = frame_count - 1 - frame;
 
-            const auto start = std::chrono::steady_clock::now();
-            thread_local static auto* anim =
-                    build_animation(nullptr, precomp_interceptor).release();
-            thread_local static auto* gen = singleton_generator
-                    ? singleton_generator.get()
-                    : FrameGenerator::Make(sink.get(), fmt, scale_matrix).release();
+                const auto start = std::chrono::steady_clock::now();
+                thread_local static auto* anim =
+                        build_animation(nullptr, precomp_interceptor).release();
+                thread_local static auto* gen = singleton_generator
+                        ? singleton_generator.get()
+                        : FrameGenerator::Make(sink.get(), fmt, scale_matrix).release();
 
-            if (gen && anim) {
-                anim->seekFrame(frame0 + i * fps_scale);
-                gen->generateFrame(anim, SkToSizeT(i));
-            } else {
-                sink->writeFrame(nullptr, SkToSizeT(i));
-            }
+                if (gen && anim) {
+                    anim->seekFrame(frame0 + i * fps_scale);
+                    gen->generateFrame(anim, SkToSizeT(i));
+                } else {
+                    sink->writeFrame(nullptr, SkToSizeT(i));
+                }
 
-            frames_ms[i] = ms_since(start);
-        });
+                frames_ms[i] = ms_since(start);
+            });
+        }
     }
 
     sink->finalize(fps);

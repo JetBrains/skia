@@ -84,10 +84,13 @@ struct ResourceBindingRequirements {
     int fUniformsSetIdx               = kUnassigned;
     int fTextureSamplerSetIdx         = kUnassigned;
     int fInputAttachmentSetIdx        = kUnassigned;
-    /* Define uniform buffer bindings */
+    /* Define uniform and storage buffer bindings */
     int fIntrinsicBufferBinding       = kUnassigned;
     int fCombinedUniformBufferBinding = kUnassigned;
-    int fGradientBufferBinding        = kUnassigned;
+    int fStorageBufferBinding         = kUnassigned;
+    /* Maximum texture atlas dimension for StorageBuffer fallback texture, defaults to 8192 */
+    int fMaxFallbackTextureSize       = kUnassigned;
+    int fMaxFallbackTextureBytes      = kUnassigned;
 };
 
 class Caps {
@@ -130,17 +133,33 @@ public:
     /* Returns whether multisampled render to single sampled is supported. */
     bool msaaRenderToSingleSampledSupport() const { return fMSAARenderToSingleSampledSupport; }
 
+    // Sizing requirements for auxiliary attachments in a renderpass, such as the depth/stencil
+    // or color MSAA attachment.
+    enum class AttachmentSizePolicy : uint8_t {
+        kExact, // Auxiliary attachments must have the exact same size as the main texture
+        kApprox, // Auxiliary attachments can be made larger via GetApproxSize()
+        kMSAARenderArea, // MSAA-only attachments can be made smaller to fit the render bounds
+    };
+
     /**
-     * Returns whether a render pass can have MSAA/depth/stencil attachments and a resolve
-     * attachment with mismatched sizes. Note: the MSAA attachment and the depth/stencil attachment
-     * still need to match their sizes.
-     * This also implies supporting partial load/resolve.
+     * Returns whether a render pass's MSAA/depth/stencil attachments can have a different size
+     * than the resolve attachment (or the single-sampled color attachment when there is no
+     * MSAA involved).
+     *
+     * The MSAA attachment and the depth/stencil attachment must still match each other's size.
+     * If partial load/resolve is not supported, all attachments (including the resolve attachment)
+     * must still be larger than the framebuffer size.
      */
-    bool differentResolveAttachmentSizeSupport() const {
-        return fDifferentResolveAttachmentSizeSupport;
+    AttachmentSizePolicy attachmentSizePolicy() const {
+        return fAttachmentSizePolicy;
     }
 
-    /* Get required depth attachment dimensions for a givin color attachment info and dimensions. */
+    /**
+     * Get required depth attachment dimensions for a given color attachment info and dimensions.
+     * This assumes `colorAttachmentDimensions` has already been adjusted for attachmentSizePolicy()
+     * and this function's primary purpose is to handle complex requirements when rendering into
+     * multiplanar texture views.
+     */
     virtual SkISize getDepthAttachmentDimensions(const TextureInfo&,
                                                  const SkISize colorAttachmentDimensions) const {
         return colorAttachmentDimensions;
@@ -159,13 +178,18 @@ public:
                                              Protected,
                                              Renderable) const;
 
+    TextureInfo getDefaultReadableTextureInfo(TextureFormat,
+                                              Protected = Protected::kNo) const;
+
     TextureInfo getTextureInfoForSampledCopy(const TextureInfo&,  Mipmapped) const;
+    TextureInfo getTextureInfoForReadableCopy(const TextureInfo&) const;
 
     TextureInfo getDefaultCompressedTextureInfo(SkTextureCompressionType,
                                                 Mipmapped,
                                                 Protected) const;
 
     TextureInfo getDefaultStorageTextureInfo(SkColorType) const;
+    TextureInfo getDefaultReadableStorageTextureInfo(TextureFormat, Protected) const;
 
     // Tries to return a sample count > 1 if needing MSAA to render into the target specification.
     // If the target is already multisampled, it will be that count; otherwise it will be the
@@ -176,10 +200,11 @@ public:
     // sampled targets to show MSAA isn't supported.
     SampleCount getCompatibleMSAASampleCount(const TextureInfo&) const;
 
-    // If true, the texture can be sampled within a shader (possibly with MSAA, although by default
-    // we consider multisampled textures not to be sampleable because that requires backend-specific
-    // shader code not exposed in SkSL).
+    // If true, the texture can be sampled within a shader with linear filtering.
     bool isTexturable(const TextureInfo&, bool allowMSAA=false) const;
+    // If true, the texture can be read within a shader (via nearest sampling, texel fetch,
+    // or as a readonly proxy for storage buffers).
+    bool isReadable(const TextureInfo&, bool allowMSAA=false) const;
     // If true, the texture can be rasterized and/or resolved to (possibly with MSAA)
     bool isRenderable(const TextureInfo&) const;
     // If true, the texture can be rasterized using multisample-render-to-single-sample features.
@@ -285,18 +310,16 @@ public:
     bool allowCpuSync() const { return fAllowCpuSync; }
 
     /* Returns whether storage buffers are supported and to be preferred over uniform buffers. */
-    bool storageBufferSupport() const { return fStorageBufferSupport; }
-
-    /**
-     * The gradient buffer is an unsized float array so it is only optimal memory-wise to use it if
-     * the storage buffer memory layout is std430 or in metal, which is also the only supported
-     * way the data is packed.
-     */
-    bool gradientBufferSupport() const {
-        return fStorageBufferSupport &&
-               (fResourceBindingReqs.fStorageBufferLayout == Layout::kStd430 ||
-                fResourceBindingReqs.fStorageBufferLayout == Layout::kMetal);
+    bool storageBufferSupport() const {
+        SkASSERT(!fStorageBufferSupport ||
+                 fResourceBindingReqs.fStorageBufferLayout == Layout::kStd430 ||
+                 fResourceBindingReqs.fStorageBufferLayout == Layout::kStd430_F16 ||
+                 fResourceBindingReqs.fStorageBufferLayout == Layout::kMetal);
+        return fStorageBufferSupport;
     }
+
+    /* Returns whether storage buffers are supported for compute dispatches. */
+    bool storageBufferSupportForCompute() const { return fStorageBufferSupportForCompute; }
 
     /* Returns whether a draw buffer can be mapped. */
     bool drawBufferCanBeMapped() const { return fDrawBufferCanBeMapped; }
@@ -458,12 +481,12 @@ protected:
     bool fDrawBufferCanBeMapped = true;
     bool fBufferMapsAreAsync = false;
     bool fMSAARenderToSingleSampledSupport = false;
-    bool fDifferentResolveAttachmentSizeSupport = false;
     bool fAvoidMSAA = false;
     bool fDrawListLayer = false;
     bool fAvoidDepthMode = false;
 
     bool fComputeSupport = false;
+    bool fStorageBufferSupportForCompute = false;
     bool fSupportsAHardwareBufferImages = false;
     bool fFullCompressedUploadSizeMustAlignToBlockDims = false;
 
@@ -486,6 +509,7 @@ protected:
 
     ResourceBindingRequirements fResourceBindingReqs;
     BlendEquationSupport fBlendEqSupport = BlendEquationSupport::kBasic;
+    AttachmentSizePolicy fAttachmentSizePolicy = AttachmentSizePolicy::kExact;
 
     GpuStatsFlags fSupportedGpuStats = GpuStatsFlags::kNone;
 

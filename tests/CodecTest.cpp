@@ -41,6 +41,7 @@
 #include "include/private/SkTemplates.h"
 #include "modules/skcms/skcms.h"
 #include "src/codec/SkCodecImageGenerator.h"
+#include "src/codec/SkCodecPriv.h"
 #include "src/core/SkAutoMalloc.h"
 #include "src/core/SkAutoPixmapStorage.h"
 #include "src/core/SkColorSpacePriv.h"
@@ -48,11 +49,16 @@
 #include "src/core/SkRandom.h"
 #include "src/core/SkStreamPriv.h"
 #include "src/shaders/gradients/SkLinearGradient.h"
+#include "tests/CodecPriv.h"
 #include "tests/FakeStreams.h"
 #include "tests/Test.h"
 #include "tools/DecodeUtils.h"
 #include "tools/Resources.h"
 #include "tools/ToolUtils.h"
+
+#if defined(SK_CODEC_DECODES_ICO)
+#include "include/codec/SkIcoDecoder.h"
+#endif
 
 #if defined(SK_CODEC_DECODES_PNG_WITH_RUST)
 #include "include/codec/SkPngRustDecoder.h"
@@ -67,6 +73,7 @@
 #include <setjmp.h>
 
 #include <algorithm>
+#include <array>
 #include <cstdint>
 #include <cstring>
 #include <initializer_list>
@@ -288,10 +295,10 @@ static void test_codec(skiatest::Reporter* r, const char* path, Codec* codec, Sk
 }
 
 static bool supports_partial_scanlines(const char path[]) {
-    static const char* const exts[] = {
-        "jpg", "jpeg", "png", "webp",
-        "JPG", "JPEG", "PNG", "WEBP"
-    };
+    static constexpr auto exts = std::to_array<const char*>({
+            "jpg", "jpeg", "png", "webp",
+            "JPG", "JPEG", "PNG", "WEBP",
+    });
 
     for (uint32_t i = 0; i < std::size(exts); i++) {
         if (SkStrEndsWith(path, exts[i])) {
@@ -933,14 +940,15 @@ DEF_TEST(Codec_pngChunkReader, r) {
 #define PNG_BYTES(str) reinterpret_cast<png_byte*>(const_cast<char*>(str))
 
     // Create some chunks that match the Android framework's use.
-    static png_unknown_chunk gUnknowns[] = {
-        { "npOl", PNG_BYTES("outline"), sizeof("outline"), PNG_HAVE_IHDR },
-        { "npLb", PNG_BYTES("layoutBounds"), sizeof("layoutBounds"), PNG_HAVE_IHDR },
-        { "npTc", PNG_BYTES("ninePatchData"), sizeof("ninePatchData"), PNG_HAVE_IHDR },
-    };
+    using Chunk = png_unknown_chunk;
+    static auto gUnknowns = std::to_array<Chunk>({
+            Chunk{ "npOl", PNG_BYTES("outline"), sizeof("outline"), PNG_HAVE_IHDR },
+            Chunk{ "npLb", PNG_BYTES("layoutBounds"), sizeof("layoutBounds"), PNG_HAVE_IHDR },
+            Chunk{ "npTc", PNG_BYTES("ninePatchData"), sizeof("ninePatchData"), PNG_HAVE_IHDR },
+    });
 
     png_set_keep_unknown_chunks(png, PNG_HANDLE_CHUNK_ALWAYS, PNG_BYTES("npOl\0npLb\0npTc\0"), 3);
-    png_set_unknown_chunks(png, info, gUnknowns, std::size(gUnknowns));
+    png_set_unknown_chunks(png, info, gUnknowns.data(), std::size(gUnknowns));
 #if PNG_LIBPNG_VER < 10600
     /* Deal with unknown chunk location bug in 1.5.x and earlier */
     png_set_unknown_chunk_location(png, info, 0, PNG_HAVE_IHDR);
@@ -2598,12 +2606,6 @@ DEF_TEST(PngRustHdrMetadataRoundTrip, r) {
 }
 #endif
 
-// for private SkCodec access
-class SkCodecPriv {
-public:
-    static bool needsRewind(const SkCodec* codec) { return codec->fNeedsRewind; }
-};
-
 DEF_TEST(jpeg_invalid_stream_state, r) {
     // Invalid/corrupted jpeg data.
     auto data = GetResourceAsData("invalid_images/b464333052.jpg");
@@ -2611,7 +2613,7 @@ DEF_TEST(jpeg_invalid_stream_state, r) {
     auto codec = SkAndroidCodec::MakeFromData(std::move(data));
     REPORTER_ASSERT(r, codec);
 
-    REPORTER_ASSERT(r, !SkCodecPriv::needsRewind(codec->codec()));
+    REPORTER_ASSERT(r, !SkCodecPriv::NeedsRewind(codec->codec()));
 
     const SkImageInfo info = codec->getInfo();
     SkAutoPixmapStorage pm;
@@ -2626,14 +2628,14 @@ DEF_TEST(jpeg_invalid_stream_state, r) {
     // Expected to fail due to bad data.
     REPORTER_ASSERT(r, res != SkCodec::kSuccess);
     // But the stream should be rewinded if we attempt other operations.
-    REPORTER_ASSERT(r, SkCodecPriv::needsRewind(codec->codec()));
+    REPORTER_ASSERT(r, SkCodecPriv::NeedsRewind(codec->codec()));
 
     // Attempt a decode at the natural size, to exercize the getPixels path.
     res = codec->getAndroidPixels(info, pm.writable_addr(), pm.rowBytes());
     // Expected to fail due to bad data.
     REPORTER_ASSERT(r, res != SkCodec::kSuccess);
     // But the stream should be rewinded if we attempt other operations.
-    REPORTER_ASSERT(r, SkCodecPriv::needsRewind(codec->codec()));
+    REPORTER_ASSERT(r, SkCodecPriv::NeedsRewind(codec->codec()));
 }
 
 DEF_TEST(Codec_Bmp_b511820841, r) {
@@ -2679,3 +2681,141 @@ DEF_TEST(Codec_Bmp_b511820841, r) {
         codec->getPixels(info, &unusedPixels, info.minRowBytes(), &opts) != SkCodec::kSuccess);
 }
 
+#if defined(SK_CODEC_DECODES_ICO) && \
+        (defined(SK_CODEC_DECODES_PNG_WITH_LIBPNG) || defined(SK_CODEC_DECODES_PNG_WITH_RUST))
+DEF_SERIAL_TEST(Ico_usesRegisteredPngDecoder, r) {
+    sk_sp<SkData> icoData = make_ico_from_png_resource(r, "images/mandrill_128.png");
+
+    ScopedCodecDecoders scopedDecoders;
+    // Register a custom PNG decoder that returns a different image ("images/plane.png", 250x126)
+    // than the embedded PNG ("images/mandrill_128.png", 128x128) to verify without static state
+    // that SkIcoCodec delegates to the runtime-registered PNG decoder (allowing callers to choose
+    // priority when both libpng and Rust PNG are compiled in) rather than calling a compiled-in PNG
+    // decoder directly.
+#if defined(SK_CODEC_DECODES_PNG_WITH_LIBPNG)
+    SkCodecs::Register({
+            "png",
+            SkPngDecoder::IsPng,
+            [](std::unique_ptr<SkStream>, SkCodec::Result* result, SkCodecs::DecodeContext ctx)
+                    -> std::unique_ptr<SkCodec> {
+                return SkPngDecoder::Decode(GetResourceAsStream("images/plane.png"), result, ctx);
+            },
+    });
+#elif defined(SK_CODEC_DECODES_PNG_WITH_RUST)
+    SkCodecs::Register({
+            "png",
+            SkPngRustDecoder::IsPng,
+            [](std::unique_ptr<SkStream>, SkCodec::Result* result, SkCodecs::DecodeContext ctx)
+                    -> std::unique_ptr<SkCodec> {
+                return SkPngRustDecoder::Decode(
+                        GetResourceAsStream("images/plane.png"), result, ctx);
+            },
+    });
+#endif
+
+    std::unique_ptr<SkCodec> codec = SkCodec::MakeFromStream(SkMemoryStream::Make(icoData));
+    REPORTER_ASSERT(r, codec != nullptr);
+    if (codec) {
+        REPORTER_ASSERT(r,
+                        codec->dimensions() == SkISize::Make(250, 126),
+                        "Expected SkIcoCodec to use the registered PNG decoder");
+    }
+}
+
+DEF_SERIAL_TEST(Ico_fallbackWhenPngNotRegistered, r) {
+    ScopedCodecDecoders scopedDecoders;
+    scopedDecoders.clear();
+    SkCodecs::Register(SkIcoDecoder::Decoder());
+
+    sk_sp<SkData> icoData = make_ico_from_png_resource(r, "images/mandrill_128.png");
+
+    // Even though no "png" decoder is registered in SkCodecs, SkIcoCodec should fall back to a
+    // compiled-in PNG decoder (libpng or Rust PNG).
+    std::unique_ptr<SkCodec> codec = SkCodec::MakeFromStream(SkMemoryStream::Make(icoData));
+    REPORTER_ASSERT(r,
+                    codec != nullptr,
+                    "Expected fallback to built-in PNG decoder when PNG is not registered");
+}
+#endif  // SK_CODEC_DECODES_ICO && (SK_CODEC_DECODES_PNG_WITH_LIBPNG ||
+        // SK_CODEC_DECODES_PNG_WITH_RUST)
+
+DEF_TEST(Codec_budgeted_buffer, r) {
+    std::unique_ptr<SkStream> stream(GetResourceAsStream("images/baby_tux.png"));
+    REPORTER_ASSERT(r, stream);
+    if (!stream) {
+        return;
+    }
+    std::unique_ptr<SkCodec> codec = SkCodec::MakeFromStream(std::move(stream));
+    REPORTER_ASSERT(r, codec);
+    if (!codec) {
+        return;
+    }
+
+    // Initialize the codec's decode budget via startIncrementalDecode.
+    SkAutoPixmapStorage pm;
+    pm.alloc(codec->getInfo());
+    SkCodec::Options opts;
+    opts.fMaxDecodeMemory = 1024;
+    REPORTER_ASSERT(r,
+                    codec->startIncrementalDecode(
+                            codec->getInfo(), pm.writable_addr(), pm.rowBytes(), &opts) ==
+                            SkCodec::kSuccess);
+
+    SkCodecPriv::BudgetedBuffer buf;
+    REPORTER_ASSERT(r, buf.empty());
+    REPORTER_ASSERT(r, buf.size() == 0);
+    REPORTER_ASSERT(r, buf.data() == nullptr);
+    REPORTER_ASSERT(r, buf.span().empty());
+
+    // Zero-byte allocation succeeds and remains empty.
+    REPORTER_ASSERT(r, buf.allocateFromBudget(codec.get(), 0) == SkCodec::kSuccess);
+    REPORTER_ASSERT(r, buf.empty());
+    REPORTER_ASSERT(r, buf.size() == 0);
+
+    // Zero-initialized allocation within budget.
+    REPORTER_ASSERT(r, buf.allocateFromBudget(codec.get(), 64) == SkCodec::kSuccess);
+    REPORTER_ASSERT(r, !buf.empty());
+    REPORTER_ASSERT(r, buf.size() == 64);
+    REPORTER_ASSERT(r, buf.span().size() == 64);
+    for (uint8_t b : buf.span()) {
+        REPORTER_ASSERT(r, b == 0);
+    }
+    buf.span()[0] = 42;
+
+    // Move construction transfers ownership and zeroes the source size.
+    SkCodecPriv::BudgetedBuffer moveConstructed(std::move(buf));
+    REPORTER_ASSERT(r, buf.empty());            // NOLINT(bugprone-use-after-move)
+    REPORTER_ASSERT(r, buf.size() == 0);        // NOLINT(bugprone-use-after-move)
+    REPORTER_ASSERT(r, buf.data() == nullptr);  // NOLINT(bugprone-use-after-move)
+    REPORTER_ASSERT(r, buf.span().empty());     // NOLINT(bugprone-use-after-move)
+    REPORTER_ASSERT(r, moveConstructed.size() == 64);
+    REPORTER_ASSERT(r, moveConstructed.span()[0] == 42);
+
+    // Move assignment transfers ownership and zeroes the source size.
+    SkCodecPriv::BudgetedBuffer moveAssigned;
+    moveAssigned = std::move(moveConstructed);
+    REPORTER_ASSERT(r, moveConstructed.empty());            // NOLINT(bugprone-use-after-move)
+    REPORTER_ASSERT(r, moveConstructed.size() == 0);        // NOLINT(bugprone-use-after-move)
+    REPORTER_ASSERT(r, moveConstructed.data() == nullptr);  // NOLINT(bugprone-use-after-move)
+    REPORTER_ASSERT(r, moveAssigned.size() == 64);
+    REPORTER_ASSERT(r, moveAssigned.span()[0] == 42);
+
+    // Explicit reset clears the buffer before reusing it for a new allocation.
+    moveAssigned.reset();
+    REPORTER_ASSERT(r, moveAssigned.empty());
+    REPORTER_ASSERT(r, moveAssigned.size() == 0);
+    REPORTER_ASSERT(r, moveAssigned.data() == nullptr);
+
+    // Uninitialized allocation within budget.
+    REPORTER_ASSERT(r,
+                    moveAssigned.allocateFromBudget(codec.get(), 32, /*zeroInit=*/false) ==
+                            SkCodec::kSuccess);
+    REPORTER_ASSERT(r, moveAssigned.size() == 32);
+
+    // Allocation exceeding remaining budget returns kOutOfMemory and leaves the buffer empty.
+    moveAssigned.reset();
+    REPORTER_ASSERT(r, moveAssigned.allocateFromBudget(codec.get(), 2048) == SkCodec::kOutOfMemory);
+    REPORTER_ASSERT(r, moveAssigned.empty());
+    REPORTER_ASSERT(r, moveAssigned.size() == 0);
+    REPORTER_ASSERT(r, moveAssigned.data() == nullptr);
+}

@@ -27,6 +27,13 @@
 
 namespace skgpu::graphite {
 
+// NOTE: Every class and struct defined in this class must assert that it is trivially destructible.
+// These largely are organized and collected in linked lists created by an arena, which helps avoid
+// memory coherency issues normally associated with linked lists. Enforcing trivial destribility
+// means that the arena can be reset without worrying about destructors.
+
+// TODO(michaelludwig): These types can be moved into DrawListLayer.cpp and just forward declare
+// Layer for ClipStack and Device.
 
 /**
  * Defines a bitmask that defines what types of buffer modifications are blocked by draws within a
@@ -96,6 +103,12 @@ enum class BoundsTestResult {
 };
 SK_MAKE_BITMASK_OPS(BoundsTestResult)
 
+/**
+ * LayerKey encodes the binding information needed for a draw within a layer (e.g. its pipeline
+ * and texture and uniform buffer bindings), as well as the BoundsFlags that control how new draws
+ * must be tested against the recorded draws. Every draw within a BindingList will have the same
+ * LayerKey.
+ */
 struct LayerKey {
     GraphicsPipelineCache::Index fPipelineIndex;
     TextureDataCache::Index fTextureIndex;
@@ -123,6 +136,7 @@ struct LayerKey {
                fUniformIndex == other.fUniformIndex;
     }
 };
+static_assert(std::is_trivially_destructible<LayerKey>::value);
 
 /**
  * A Draw represents the combination of a DrawParams and a specific RenderStep from the
@@ -131,13 +145,16 @@ struct LayerKey {
  */
 struct Draw {
     Draw(const DrawParams* params, const UniformDataCache::Index uniformIndex)
-            : fDrawParams(params), fUniformIndex(uniformIndex) {}
+            : fDrawParams(params), fUniformIndex(uniformIndex), fNext(nullptr) {}
+
+    Draw() = default; // Let it be uninitialized
 
     const DrawParams* fDrawParams;
-    const UniformDataCache::Index fUniformIndex;
+    UniformDataCache::Index fUniformIndex;
 
-    SK_DECLARE_INTERNAL_LLIST_INTERFACE(Draw);
+    Draw* fNext;
 };
+static_assert(std::is_trivially_destructible<Draw>::value);
 
 /**
  * BindingList represents a collection of Draws that share the same RenderStep and other binding
@@ -150,44 +167,127 @@ struct Draw {
  * painter's order rendering.
  */
 struct BindingList {
-    static constexpr uint32_t kCoarseBoundsThreshold = 32;
-
     BindingList(const RenderStep* step, LayerKey key) : fStep(step), fKey(key) {}
+    BindingList() = default;
 
     Rect fBounds = Rect::InfiniteInverted();
 
-    SkTInternalLList<Draw> fDraws;
     const RenderStep* fStep;
-    const LayerKey fKey;
+    LayerKey fKey;
 
-    uint32_t fDrawCount = 0; // SkTInternalLList doesn't maintain a count for us :/
+    // Maintain a singly-linked list of draws, either prepending to head for front-to-back
+    // rendering or appending to tail for back-to-front rendering.
+    Draw* fHead = nullptr;
+    Draw* fTail = nullptr;
+
+    // Every BindingList always has at least one draw in it, and many might only have the one so
+    // store it inline for better memory access.
+    Draw fFirstDraw; // Invalid until fHead != nullptr
 
     SK_DECLARE_INTERNAL_LLIST_INTERFACE(BindingList);
 
-    SK_ALWAYS_INLINE bool intersects(const Rect& drawBounds) const {
-        if (!fBounds.intersects(drawBounds)) {
+    SK_ALWAYS_INLINE bool isBetterMatch(const LayerKey& key,
+                                        const BindingList* existingMatch) const {
+        if (key.fPipelineIndex != fKey.fPipelineIndex) {
+            // Any partial match must still share the same pipeline
+            return false;
+        } else if (!existingMatch) {
+            return true; // Any pipeline match is better than no match
+        }
+
+        // Otherwise we need to rank based on similarities, preferring texture matches to
+        // uniform matches.
+        SkASSERT(existingMatch->fKey.fPipelineIndex == key.fPipelineIndex);
+        const bool existingTextureMatch = existingMatch->fKey.fTextureIndex == key.fTextureIndex;
+        const bool newTextureMatch = fKey.fTextureIndex == key.fTextureIndex;
+        if (existingTextureMatch != newTextureMatch) {
+            // If `newTextureMatch` is true, then the new BindingList is definitely the better
+            // match (prioritizing textures over UBO changes). If it's false, then the old
+            // match was better since it had a texture match.
+            return newTextureMatch;
+        } // else either both match on the texture, or neither match so equal preference.
+
+        const bool existingUniformMatch = existingMatch->fKey.fUniformIndex == key.fUniformIndex;
+        const bool newUniformMatch= fKey.fUniformIndex == key.fUniformIndex;
+        if (existingUniformMatch != newUniformMatch) {
+            // Like above, if `newUniformMatch` is true, it's the better match.
+            return newUniformMatch;
+        } // else either both match on the uniform, or neither match so equal preference.
+
+        // // At this point, they are equivalent, so prefer the new list as it's deeper
+        return true;
+    }
+
+    SK_ALWAYS_INLINE void addDraw(SkArenaAlloc* alloc,
+                                  const DrawParams* draw,
+                                  UniformDataCache::Index uniformIndex,
+                                  bool backToFront) {
+        fBounds.join(draw->drawBounds());
+        if (fHead) {
+            Draw* next = alloc->make<Draw>(draw, uniformIndex);
+            if (backToFront) {
+                fTail->fNext = next;
+                fTail = next;
+            } else {
+                next->fNext = fHead;
+                fHead = next;
+            }
+        } else {
+            fFirstDraw = Draw(draw, uniformIndex);
+            fHead = fTail = &fFirstDraw;
+        }
+    }
+};
+static_assert(std::is_trivially_destructible<BindingList>::value);
+
+// Helper struct to aggregate the bounds of all draws in a Layer into a smaller set of aligned
+// bounding boxes.
+struct BoundsBlock {
+    BoundsBlock() {
+        // Initializing these Rects to infinite inverted makes the first call to join() equivalent
+        // to just assigning the new rect.
+        fBounds = Rect::InfiniteInverted();
+        fRects.fill(Rect::InfiniteInverted());
+    }
+
+    bool intersects(Rect::ComplementRect test) const {
+        if (!fBounds.intersects(test)) {
             return false;
         }
-        if (fDrawCount > kCoarseBoundsThreshold) {
-            return true;
-        }
-        for (const Draw* d = fDraws.head(); d; d = d->fNext) {
-            if (d->fDrawParams->drawBounds().intersects(drawBounds)) {
+
+        const int count = std::min(kN, fJoinIndex);
+        for (int i = 0; i < count; i++) {
+            if (fRects[i].intersects(test)) {
                 return true;
             }
         }
+
         return false;
     }
 
-    SK_ALWAYS_INLINE void addDraw(Draw* draw, bool backToFront) {
-        fBounds.join(draw->fDrawParams->drawBounds());
-        fDrawCount++;
-        if (backToFront) {
-            fDraws.addToTail(draw);
-        } else {
-            fDraws.addToHead(draw);
-        }
+    void add(Rect rect) {
+        fBounds.join(rect);
+        fRects[(fJoinIndex++) % kN].join(rect);
     }
+
+private:
+    // This is both performance and space sensitive. A value of 8 makes Layers smaller and can lead
+    // to faster CPU collection for layers that have lots of draws, but it starts to hurt the
+    // GPU batching. A value of 32 makes Layers larger, which slows down creating lots of low-draw
+    // count layers and increases the bounds testing time, but helps GPU batching. More than 32
+    // starts to have diminishing returns for GPU batching. 16 seems to be a good sweet spot in
+    // local benchmarking.
+    //
+    // NOTE: As long as a Layer has fewer than N draws recorded in it, its bounds testing is exact.
+    static constexpr int kN = 16;
+
+    Rect fBounds; // Overall bounds
+    std::array<Rect, kN> fRects;
+
+    // The index into fRects that will consume the next recorded draw's bounds. Stochastically this
+    // works about as well as trying to minify the area increase when adding a draw's bounds but is
+    // much faster since there is no search.
+    int fJoinIndex = 0;
 };
 
 /**
@@ -195,6 +295,27 @@ struct BindingList {
  * a Layer, this allows draws to be ordered to minimize pipeline and state changes without impacting
  * painter's order visual correctness. Every draw stored in a Layer shares the same
  * CompressedPaintersOrder, which is a monotonically increasing sequence for each DrawList.
+ *
+ * Independence does not necessarily mean that all of the draws are disjoint from each other,
+ * although that is frequently the case. The following caveats apply:
+ *   1. Draws that share the same DrawParams (e.g. for a multi-step render) are assumed to overlap.
+ *      The placement within a Layer is determined by the final shading Draw. The test flags used
+ *      for search layers is the union of all Draws, so other than overlapping with its own steps
+ *      they will be disjoint from other draws in the layer.
+ *   2. Draws are only compared against other draws if the testMask has overlapping bits with their
+ *      LayerKey's flags. In the case there are no shared bits, bounds intersections are irrelevant
+ *      since the actual draw operations should be independent.
+ *   3. Draws whose LayerKey's flags represent a simple-shading draw (kColor and no kMostBeDisjoint)
+ *      are allowed to overlap since rasterization order on the GPU will preserve painter's order.
+ *      This is only allowed to occur when such overlaps would not confuse matching bounds against
+ *      other bindings.
+ *   4. If a Layer is not the tail layer, its BindingLists are no longer forward-merge eligible
+ *      (since that only pulls a list into a new layer). Since they are no longer forward-merge
+ *      eligible, it is no longer critical to preserve disjointness between draws in one BindingList
+ *      and those earlier than it. In this case, new Draws only need to be disjoint from
+ *      BindingLists drawn after a match.
+ *      NOTE: This property remains true, but with Layer storing aggregate bounds across all
+ *      BindingLists in the layer, this does not arise in practice.
  *
  * A Layer keeps its single list of BindingLists organized to maintain the following properties:
  *   1. Non-shading BindingLists are ordered before every shading BindingList. This helps reduce the
@@ -209,23 +330,35 @@ struct BindingList {
 struct Layer {
     Layer(const CompressedPaintersOrder& order) : fOrder(order) {}
 
+    BoundsBlock fColorBounds;
+    BoundsBlock fStencilBounds;
+
     const CompressedPaintersOrder fOrder;
     SkTInternalLList<BindingList> fBindings;
+    BindingList fFirstBinding;
+
     SK_DECLARE_INTERNAL_LLIST_INTERFACE(Layer);
 
     // Performs no bounds checks, so can only be used when checks have already confirmed the Layer
-    // is valid for adding a new draw into. This searches backwards from `startList` (inclusive) or
+    // is valid for adding a new draw into. This searches backwards from `startList` (exclusive) or
     // the tail BindingList if null.
+    //
+    // Return a BindingList matching `key` if one exists in the layer (or exists in the layer
+    // at or before `startList`). If an exact match is not found, it attempts to return a
+    // BindingList that has the same pipeline index.
     SK_ALWAYS_INLINE BindingList* searchBinding(const LayerKey& key,
-                                                BindingList* startList=nullptr) {
-        if (!startList) {
-            startList = fBindings.tail();
-        }
-
-        // Advancement is evaluated at compile time
-        for (BindingList* list = startList; list != nullptr; list = list->fPrev) {
+                                                BindingList* startList=nullptr,
+                                                bool forForwardMerge=false) {
+        // `startList` is exclusive, so if it's non-null the loop starts with fPrev.
+        BindingList* pipelineMatch = nullptr;
+        for (BindingList* list = startList ? startList->fPrev : fBindings.tail();
+                list != nullptr; list = list->fPrev) {
             if (list->fKey.isEqual(key)) {
                 return list;
+            } else if (list->isBetterMatch(key, pipelineMatch)) {
+                // Save pipeline while continuing to search for an exact match
+                SkASSERT(list->fKey.fFlags == key.fFlags);
+                pipelineMatch = list;
             } else if (key.performsShading() && !list->fKey.performsShading()) {
                 // The BindingLists are split in two sections: a latter half with color (that is
                 // check first because we start at the tail) and then anything else that is
@@ -235,88 +368,27 @@ struct Layer {
                 break;
             }
         }
-        return nullptr;
+
+        // Even though an exact match wasn't found, any non-null pipelineMatch can be used to place
+        // a new binding list, which helps shift from a pipeline switch to just a dynamic state.
+        return pipelineMatch;
     }
 
-    // Note, for the purposes of allowing intersections with non-shading draws, we only delineate
-    // between depthOnlyDraws and nonDepthOnly draws. Although the stencil part of stencil renderers
-    // are also non-shading, and thus could be bypassed by shading draws, in practice there are very
-    // few scenarios where this increases batching and/or performance. This is because---regardless
-    // of the direction of the traversal---the shading part of the stencil renderer is 1) likely
-    // very close by 2) will stop any dependsOnDst draw anyways.
-    //
-    // This was implemented in https://review.skia.org/1171836 and slightly regresses performance
-    // due to the overhead it introduces.
-    SK_ALWAYS_INLINE std::pair<SkEnumBitMask<BoundsTestResult>, BindingList*> test(
-            const Rect& drawBounds,
-            const LayerKey& key,
+    // Test the draw with the given bounds and LayerKey against the draws already collected in
+    // this Layer, limiting checks to those that overlap with `testMask`. Returns whether or not
+    // the draw is allowed in the layer, allowed before the layer, or must be in a later layer.
+    SK_ALWAYS_INLINE SkEnumBitMask<BoundsTestResult> test(
+            const Rect::ComplementRect drawBounds,
             SkEnumBitMask<BoundsFlags> testMask) {
-        BindingList* foundMatch = nullptr;
-        BindingList* list = fBindings.tail();
-        BindingList* end = nullptr;
-
-        // Always iterate backwards from the tail, we do this because most draws (including depth-
-        // only clip draws) must maintain painter's order so we can early out if they overlap with
-        // a more recent draw. In the event that there isn't any color dependency, we're just
-        // searching for a disjoint binding match and then whether or not to start from the front or
-        // the back is arbitrary
-        for (; list != end; list = list->fPrev) {
-            if (list->fKey.isEqual(key)) {
-                // A side effect of the layer key system is that a non-shading stencil step and a
-                // depth-only draw can generate a valid match. While this allows the two render
-                // steps to share the same binding list, it technically still produces a visually
-                // correct image due to the multi-step nature of stencil renderers:
-                //
-                // 1. Depth-Only matching a Stencil List: While depth-only draws allow self-
-                //    intersection (see below), they cannot bypass shading draws. During a backwards
-                //    traversal, a depth draw might match the stencil's non-shading step, but it
-                //    will always be blocked by the stencil's subsequent shading step (which shares
-                //    identical bounds and is encountered first in reverse).
-                //
-                // 2. Stencil Step matching a Depth-Only List: A spatially disjoint non-shading
-                //    stencil step can match an existing depth-only list. This is a theoretical
-                //    hazard because shading draws are permitted to bypass depth-only lists.
-                //    However, the stencil's corresponding shading step acts as a shield; any
-                //    succeeding draw that would have incorrectly bypassed the stencil step will
-                //    collide with the shading step earlier in its traversal and halt.
-                foundMatch = list;
-                if (key.performsShading() && !key.usesStencil()) {
-                    if (!SkToBool(key.fFlags & BoundsFlags::kMustBeDisjoint)) continue;
-                }
-            }
-
-            // Stencil draws always check for intersection. If it's not a stencil draw, it is either
-            // a shading or depth-only draw. Both are allowed to intersect freely with existing
-            // depth-only draws for different reasons:
-            //
-            // 1. Shading bypassing Depth-Only: An unclipped shading draw does not depend on extant
-            //    depth masks. By bypassing it and drawing earlier, it safely skips a depth test
-            //    that it naturally would have passed anyway (due to having a closer Z-value).
-            //    Clipped shading draws are prevented from bypassing their parent depth-only draws
-            //    by the stop-layer insertion mechanism, not by intersection testing.
-            //
-            // 2. Depth-Only bypassing Depth-Only: Because the hardware depth test min/maxs to
-            //    retain the "closest" Z-value, depth writes are commutative. I.e. the greatest
-            //    /least Z-value is retained regardless of draw-ordering. This allows
-            //    intersecting depth-only draws to be safely reordered.
-            //
-            // However, an incoming depth-only draw may NOT bypass an extant shading draws. This is
-            // because writing a closer Z-value would cause the shading draw to fail the depth test.
-            if (!key.usesStencil()) {
-                if (list->fKey.performsShading() && list->intersects(drawBounds)) {
-                    return {BoundsTestResult::kBlocked, foundMatch};
-                }
-            } else {
-                if (list->intersects(drawBounds)) {
-                    return {BoundsTestResult::kBlocked, foundMatch};
-                }
+        SkEnumBitMask<BoundsTestResult> result = BoundsTestResult::kBlocked;
+        if (!(testMask & BoundsFlags::kColor) || !fColorBounds.intersects(drawBounds)) {
+            result |= BoundsTestResult::kAllowedBeforeLayer;
+            if (!(testMask & BoundsFlags::kStencil) || !fStencilBounds.intersects(drawBounds)) {
+                result |= BoundsTestResult::kAllowedInLayer;
             }
         }
 
-        return {foundMatch ? BoundsTestResult::kAllowedInLayer
-                           : BoundsTestResult::kAllowedBeforeLayer |
-                             BoundsTestResult::kAllowedInLayer,
-                foundMatch};
+        return result;
     }
 
     SK_ALWAYS_INLINE BindingList* addNewBinding(SkArenaAllocWithReset* alloc,
@@ -325,8 +397,14 @@ struct Layer {
                                                 const RenderStep* step) {
         SkASSERT(!insertBefore || fBindings.isInList(insertBefore));
 
-        BindingList* list = alloc->make<BindingList>(step, key);
+        if (fBindings.isEmpty()) {
+            SkASSERT(!insertBefore);
+            fFirstBinding = BindingList(step, key);
+            fBindings.addToHead(&fFirstBinding);
+            return &fFirstBinding;
+        }
 
+        BindingList* list = alloc->make<BindingList>(step, key);
         // We need to insert the new list in the right place to keep fBindings organized with all
         // non-shading layers before shading layers, while also ensuring that the new `list` comes
         // before `insertBefore` (when non-null).
@@ -355,7 +433,36 @@ struct Layer {
 
         return list;
     }
+
+    SK_ALWAYS_INLINE void transfer(BindingList* binding, Layer* newLayer) {
+        SkASSERT(this->fBindings.isInList(binding));
+        fBindings.remove(binding);
+        newLayer->fBindings.addToHead(binding);
+
+        // The new layer needs to initialize its bounds array to match what's now in it. `transfer`
+        // is only called for forward-merges so there's no need to update the stencil bounds, since
+        // only simple-shading draws can be moved. There is also little need to try and remove the
+        // binding's bounds from this layer's fColorBounds. Any new draw that would have
+        // overlapped with `binding`'s bounds will get caught by `newLayer` instead. Draws that
+        // make it past `newLayer` might get caught by a slot that was grown to be the union of a
+        // `binding` draw and a different draw, but that would require fully re-iterating all of
+        // this layer's draw's bounds and in practice this risk does not seem to hurt batching.
+        SkASSERT(binding->fKey.isSimpleShading());
+        for (const Draw* d = binding->fHead; d; d = d->fNext) {
+            newLayer->fColorBounds.add(d->fDrawParams->drawBounds());
+        }
+    }
+
+    SK_ALWAYS_INLINE void updateForDraw(Rect bounds, SkEnumBitMask<BoundsFlags> flags) {
+        if (flags & BoundsFlags::kColor) {
+            fColorBounds.add(bounds);
+        }
+        if (flags & BoundsFlags::kStencil) {
+            fStencilBounds.add(bounds);
+        }
+    }
 };
+static_assert(std::is_trivially_destructible<Layer>::value);
 
 }  // namespace skgpu::graphite
 

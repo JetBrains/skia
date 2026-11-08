@@ -15,8 +15,8 @@
 #include "src/gpu/vk/VulkanUtilsPriv.h"
 
 namespace skgpu::graphite {
-struct ContextOptions;
 class VulkanTextureInfo;
+struct ContextOptions;
 
 class VulkanCaps final : public Caps {
 public:
@@ -41,7 +41,7 @@ public:
                               GraphicsPipelineDesc*,
                               RenderPassDesc*,
                               const RendererProvider*) const override;
-    UniqueKey makeComputePipelineKey(const ComputePipelineDesc&) const override { return {}; }
+    UniqueKey makeComputePipelineKey(const ComputePipelineDesc&) const override;
 
     void buildKeyForTexture(SkISize dimensions,
                             const TextureInfo&,
@@ -96,6 +96,8 @@ public:
         return fSupportsPipelineCreationCacheControl;
     }
 
+    bool supportsPipelineProtectedAccess() const { return fSupportsPipelineProtectedAccess; }
+
     bool supportsOcclusionQueryPrecise() const { return fOcclusionQueryPrecise; }
 
     uint32_t timestampValidBits(uint32_t queueIndex) const {
@@ -103,6 +105,10 @@ public:
     }
 
     float timestampPeriod() const { return fTimestampPeriod; }
+
+    VkPipelineStageFlags shaderReadOnlySrcStageMask() const {
+        return fShaderReadOnlyLayoutSrcStageMask;
+    }
 
 private:
     void init(const ContextOptions&,
@@ -146,6 +152,9 @@ private:
         // From VkPhysicalDevicePipelineCreationCacheControlFeatures or
         // VkPhysicalDeviceVulkan13Features
         bool fPipelineCreationCacheControl = false;
+        // From VkPhysicalDevicePipelineProtectedAccessFeaturesEXT or
+        // VkPhysicalDeviceVulkan14Features:
+        bool fPipelineProtectedAccess = false;
         // From VkPhysicalDeviceRGBA10X6FormatsFeaturesEXT
         bool fFormatRGBA10x6WithoutYCbCrSampler = false;
     };
@@ -216,10 +225,15 @@ private:
     bool fIsInputAttachmentReadCoherent = false;
     bool fSupportsFrameBoundary = false;
     bool fSupportsPipelineCreationCacheControl = false;
+    bool fSupportsPipelineProtectedAccess = false;
     bool fOcclusionQueryPrecise = false;
 
     // Flags to enable workarounds for driver bugs
     bool fMustLoadFullImageForMSAA = false;
+
+    // Cache the ReadonlySrcStageMask; optimistically adding the compute bit is a violation of the
+    // spec if we don't have compute support, so initialize and cache it here instead.
+    VkPipelineStageFlags fShaderReadOnlyLayoutSrcStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
 
     skia_private::TArray<uint32_t> fQueueFamilyTimestampValidBits;
     float fTimestampPeriod = 1.0f;

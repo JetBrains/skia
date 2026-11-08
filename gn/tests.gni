@@ -49,6 +49,7 @@ tests_sources = [
   "$_tests/ColorPrivTest.cpp",
   "$_tests/ColorSpaceTest.cpp",
   "$_tests/ColorTest.cpp",
+  "$_tests/ConvertPixelsTest.cpp",
   "$_tests/CoreBlittersTest.cpp",
   "$_tests/CubicChopTest.cpp",
   "$_tests/CubicMapTest.cpp",
@@ -121,6 +122,7 @@ tests_sources = [
   "$_tests/InvalidIndexedPngTest.cpp",
   "$_tests/IsClosedSingleContourTest.cpp",
   "$_tests/JSONTest.cpp",
+  "$_tests/JpegxlTest.cpp",
   "$_tests/LListTest.cpp",
   "$_tests/LRUCacheTest.cpp",
   "$_tests/M44Test.cpp",
@@ -250,6 +252,7 @@ tests_sources = [
   "$_tests/SkUTFTest.cpp",
   "$_tests/SkVxTest.cpp",
   "$_tests/SkXmpTest.cpp",
+  "$_tests/SkYUVAInfoTest.cpp",
   "$_tests/Skbug5221.cpp",
   "$_tests/Skbug6389.cpp",
   "$_tests/SortTest.cpp",
@@ -328,8 +331,10 @@ graphite_tests_sources = [
   "$_tests/graphite/RecordingSurfacesTest.cpp",
   "$_tests/graphite/RectTest.cpp",
   "$_tests/graphite/ShapeTest.cpp",
+  "$_tests/graphite/StorageContextTest.cpp",
   "$_tests/graphite/SubmitWithFinishProcTest.cpp",
   "$_tests/graphite/SwizzleTest.cpp",
+  "$_tests/graphite/TextureFallbackTest.cpp",
   "$_tests/graphite/TextureFormatTest.cpp",
   "$_tests/graphite/TextureProxyTest.cpp",
   "$_tests/graphite/TransformTest.cpp",
@@ -354,6 +359,8 @@ precompile_tests_sources = [
   "$_tests/graphite/precompile/PaintParamsKeyTest.cpp",
   "$_tests/graphite/precompile/PaintParamsTestUtils.cpp",
   "$_tests/graphite/precompile/PaintParamsTestUtils.h",
+  "$_tests/graphite/precompile/PipelineManagerEarlyExit.cpp",
+  "$_tests/graphite/precompile/PipelineManagerThreaded.cpp",
   "$_tests/graphite/precompile/PrecompileStatsTest.cpp",
   "$_tests/graphite/precompile/PrecompileTestUtils.cpp",
   "$_tests/graphite/precompile/PrecompileTestUtils.h",
@@ -362,18 +369,30 @@ precompile_tests_sources = [
 ]
 
 sparse_strips_test_sources = [
+  "$_tests/graphite/sparse_strips/AtlasTests.cpp",
   "$_tests/graphite/sparse_strips/ClipTest.cpp",
   "$_tests/graphite/sparse_strips/CoverageTest.cpp",
+  "$_tests/graphite/sparse_strips/CoverageTestUtils.h",
+  "$_tests/graphite/sparse_strips/CullingRepros.h",
+  "$_tests/graphite/sparse_strips/FastValidator.cpp",
+  "$_tests/graphite/sparse_strips/FastValidator.h",
   "$_tests/graphite/sparse_strips/FlattenTest.cpp",
   "$_tests/graphite/sparse_strips/LUTTest.cpp",
+  "$_tests/graphite/sparse_strips/Oracle.cpp",
+  "$_tests/graphite/sparse_strips/Oracle.h",
+  "$_tests/graphite/sparse_strips/OracleTest.cpp",
+  "$_tests/graphite/sparse_strips/OracleValidator.cpp",
+  "$_tests/graphite/sparse_strips/OracleValidator.h",
   "$_tests/graphite/sparse_strips/PolylineTest.cpp",
+  "$_tests/graphite/sparse_strips/SkpValidator.cpp",
+  "$_tests/graphite/sparse_strips/SkpValidator.h",
   "$_tests/graphite/sparse_strips/TileTestCases.cpp",
   "$_tests/graphite/sparse_strips/TileTestCases.h",
   "$_tests/graphite/sparse_strips/TilerTest.cpp",
 ]
 
 graphite_dawn_tests_sources = [ "$_tests/graphite/DawnBackendTextureTest.cpp" ]
-graphite_metal_tests_sources = [ "$_tests/graphite/MtlBackendTextureTest.mm" ]
+graphite_metal_tests_sources = [ "$_tests/graphite/MtlBackendTextureTest.cc" ]
 graphite_vulkan_tests_sources = [
   "$_tests/graphite/VulkanBackendTextureTest.cpp",
   "$_tests/graphite/VulkanDstReadRenderpassReuseTest.cpp",
@@ -531,14 +550,15 @@ ganesh_tests_sources = [
 
 ganesh_gl_tests_sources = [
   "$_tests/EGLImageTest.cpp",
+  "$_tests/GLFramebufferDeletionTest.cpp",
   "$_tests/GrGLExtensionsTest.cpp",
   "$_tests/RectangleTextureTest.cpp",
   "$_tests/TextureBindingsResetTest.cpp",
 ]
 
 ganesh_metal_tests_sources = [
-  "$_tests/MtlBackendAllocationTest.mm",
-  "$_tests/MtlCopySurfaceTest.mm",
+  "$_tests/MtlBackendAllocationTest.cc",
+  "$_tests/MtlCopySurfaceTest.cc",
 ]
 
 jpeg_gainmap_tests_sources = [

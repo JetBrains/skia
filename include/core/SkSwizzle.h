@@ -18,4 +18,10 @@
 */
 SK_API void SkSwapRB(uint32_t* dest, const uint32_t* src, int count);
 
+/** Premultiplies RGBA pixels without changing their channel order. */
+SK_API void SkPremultiplyRGBA(uint32_t* dest, const uint32_t* src, int count);
+
+/** Premultiplies RGBA pixels and swaps their red and blue channels. */
+SK_API void SkPremultiplyAndSwapRB(uint32_t* dest, const uint32_t* src, int count);
+
 #endif

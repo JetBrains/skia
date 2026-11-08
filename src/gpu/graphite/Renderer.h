@@ -16,6 +16,7 @@
 #include "include/private/SkEnumBitMask.h"
 #include "src/core/SkVx.h"
 #include "src/gpu/graphite/Attribute.h"
+#include "src/gpu/graphite/DescriptorData.h"
 #include "src/gpu/graphite/DrawTypes.h"
 #include "src/gpu/graphite/ResourceTypes.h"
 #include "src/gpu/graphite/Uniform.h"
@@ -31,16 +32,18 @@ namespace skgpu { enum class MaskFormat; }
 
 namespace skgpu::graphite {
 
-class DrawWriter;
 class DrawParams;
+class DrawWriter;
 class PipelineDataGatherer;
 class Rect;
 class ResourceProvider;
+class StorageContext;
 class TextureDataBlock;
 class Transform;
 class UniformOffsetCalculator;
 
 struct ResourceBindingRequirements;
+struct RootNodesInfo;
 
 enum class Coverage { kNone, kSingleChannel, kLCD };
 
@@ -48,37 +51,38 @@ enum class Coverage { kNone, kSingleChannel, kLCD };
 // RenderStep::kRenderStepIDVersion value. The enum values generated from this
 // list are serialized and the kRenderStepIDVersion value is the signal to
 // abandon older serialized data.
-#define SKGPU_RENDERSTEP_TYPES(M1, M2)              \
-        M1(Invalid)                                 \
-        M1(CircularArc)                             \
-        M1(AnalyticRRect)                           \
-        M1(AnalyticBlur)                            \
-        M1(PerEdgeAAQuad)                           \
-        M2(CoverBounds,      NonAAFill)             \
-        M2(CoverBounds,      RegularCover)          \
-        M2(CoverBounds,      InverseCover)          \
-        M1(CoverageMask)                            \
-        M2(BitmapText,       Mask)                  \
-        M2(BitmapText,       LCD)                   \
-        M2(BitmapText,       Color)                 \
-        M2(MiddleOutFan,     EvenOdd)               \
-        M2(MiddleOutFan,     Winding)               \
-        M1(SDFTextLCD)                              \
-        M1(SDFText)                                 \
-        M2(TessellateCurves, EvenOdd)               \
-        M2(TessellateCurves, Winding)               \
-        M1(TessellateStrokes)                       \
-        M2(TessellateWedges, Convex)                \
-        M2(TessellateWedges, EvenOdd)               \
-        M2(TessellateWedges, Winding)               \
-        M2(Vertices,         Tris)                  \
-        M2(Vertices,         TrisColor)             \
-        M2(Vertices,         TrisTexCoords)         \
-        M2(Vertices,         TrisColorTexCoords)    \
-        M2(Vertices,         Tristrips)             \
-        M2(Vertices,         TristripsColor)        \
-        M2(Vertices,         TristripsTexCoords)    \
-        M2(Vertices,         TristripsColorTexCoords)
+#define SKGPU_RENDERSTEP_TYPES(M1, M2)          \
+        M1(Invalid)                             \
+        M1(CircularArc)                         \
+        M1(AnalyticRRect)                       \
+        M1(AnalyticBlur)                        \
+        M1(AnalyticRRectBlur)                   \
+        M1(PerEdgeAAQuad)                       \
+        M2(CoverBounds,      NonAAFill)         \
+        M2(CoverBounds,      RegularCover)      \
+        M2(CoverBounds,      InverseCover)      \
+        M1(CoverageMask)                        \
+        M2(BitmapText,       Mask)              \
+        M2(BitmapText,       LCD)               \
+        M2(BitmapText,       Color)             \
+        M2(MiddleOutFan,     EvenOdd)           \
+        M2(MiddleOutFan,     Winding)           \
+        M1(SDFTextLCD)                          \
+        M1(SDFText)                             \
+        M2(TessellateCurves, EvenOdd)           \
+        M2(TessellateCurves, Winding)           \
+        M2(TessellateStrokes,Fill)              \
+        M2(TessellateStrokes,InverseFill)       \
+        M2(TessellateWedges, Convex)            \
+        M2(TessellateWedges, EvenOdd)           \
+        M2(TessellateWedges, Winding)           \
+        M2(Vertices,         Pos)               \
+        M2(Vertices,         PosColor)          \
+        M2(Vertices,         PosTexCoords)      \
+        M2(Vertices,         PosColorTexCoords) \
+        M1(Mesh)                                \
+        M1(EndCap)                              \
+        M1(WideTile)
 
 /**
  * The actual technique for rasterizing a high-level draw recorded in a DrawList is handled by a
@@ -123,7 +127,10 @@ public:
     // The DrawWriter is configured with the vertex and instance strides of the RenderStep, and its
     // primitive type. The recorded draws will be executed with a graphics pipeline compatible with
     // this RenderStep.
-    virtual void writeVertices(DrawWriter*, const DrawParams&, uint32_t ssboIndex) const = 0;
+    virtual void writeVertices(DrawWriter*,
+                               StorageContext*,
+                               const DrawParams&,
+                               uint32_t ssboIndex) const = 0;
 
     // Write out the uniform values (aligned for the layout), textures, and samplers. The uniform
     // values will be de-duplicated across all draws using the RenderStep before uploading to the
@@ -141,7 +148,7 @@ public:
     // NOTE: The above contract is mainly so that the entire SkSL program can be created by just str
     // concatenating struct definitions generated from the RenderStep and paint Combination
     // and then including the function bodies returned here.
-    virtual std::string vertexSkSL() const = 0;
+    virtual std::string vertexSkSL(const RootNodesInfo&) const = 0;
 
     // Emits code to set up textures and samplers. Should only be defined if hasTextures is true.
     virtual std::string texturesAndSamplersSkSL(const ResourceBindingRequirements&,
@@ -158,7 +165,11 @@ public:
     // Emits code to set up a primitive color value. Should only be defined if emitsPrimitiveColor
     // is true. When implemented, the returned SkSL fragment should write its color into a
     // 'half4 primitiveColor' variable (defined in the calling code).
-    virtual const char* fragmentColorSkSL() const { return ""; }
+    virtual std::string fragmentColorSkSL(const RootNodesInfo&) const { return ""; }
+
+    // Returns a pointer to the name of the local coordinates variable to use for
+    // shader sampling if non-null.
+    virtual const char* fragmentColorSkSLLocalCoordsVariable() const { return nullptr; }
 
     // Indicates whether this RenderStep's uniforms are referenced in its fragment shader code.
     // If not, its uniforms can be omitted from the fragment shader entirely.
@@ -181,7 +192,9 @@ public:
     bool appendsVertices()     const { return SkToBool(fFlags & Flags::kAppendVertices);      }
     bool vsUsesStorage()       const { return SkToBool(fFlags & Flags::kVsUsesStorage);       }
     bool fsUsesStorage()       const { return SkToBool(fFlags & Flags::kFsUsesStorage);       }
-    SkEnumBitMask<RenderStateFlags> getRenderStateFlags() const {
+
+    SkEnumBitMask<PipelineStageFlags> storageBufferStages() const { return fStorageBufferStages; }
+    SkEnumBitMask<RenderStateFlags>   getRenderStateFlags() const {
         SkEnumBitMask<RenderStateFlags> rs = RenderStateFlags::kNone;
         if (fFlags & Flags::kFixed)             { rs |= RenderStateFlags::kFixed;           }
         if (fFlags & Flags::kAppendVertices)    { rs |= RenderStateFlags::kAppendVertices;  }
@@ -194,14 +207,18 @@ public:
 
     Coverage coverage() const { return RenderStep::GetCoverage(fFlags); }
 
-    PrimitiveType primitiveType()    const { return fPrimitiveType;    }
-    size_t        staticDataStride() const { return fStaticDataStride; }
-    size_t        appendDataStride() const { return fAppendDataStride; }
+    PrimitiveType  primitiveType()    const { return fPrimitiveType;    }
+    size_t         staticDataStride() const { return fStaticDataStride; }
+    virtual size_t appendDataStride(const DrawParams& params) const { return fAppendDataStride; }
 
-    size_t numUniforms()         const { return fUniforms.size();    }
-    int    uniformAlignment()    const { return fUniformAlignment;   }
-    size_t numStaticAttributes() const { return fStaticAttrs.size(); }
-    size_t numAppendAttributes() const { return fAppendAttrs.size(); }
+    size_t storageUniformStride() const { return fStorageUniformStride;    }
+    size_t storageUniformAlignment() const { return fStorageUniformAlignment; }
+
+    size_t numUniforms()          const { return fUniforms.size();        }
+    int    uniformAlignment()     const { return fUniformAlignment;       }
+    size_t numStaticAttributes()  const { return fStaticAttrs.size();     }
+    size_t numAppendAttributes()  const { return fAppendAttrs.size();     }
+    size_t numStorageUniforms()   const { return fStorageUniforms.size(); }
 
     // Name of an attribute containing both the render step and shading SSBO index, if used.
     static const char* ssboIndexAttribute() { return "ssboIndex"; }
@@ -211,28 +228,50 @@ public:
 
     // The uniforms of a RenderStep are bound to the kRenderStep slot, the rest of the pipeline
     // may still use uniforms bound to other slots.
-    SkSpan<const Uniform>   uniforms()         const { return SkSpan(fUniforms);      }
-    SkSpan<const Attribute> staticAttributes() const { return SkSpan(fStaticAttrs);   }
-    SkSpan<const Attribute> appendAttributes() const { return SkSpan(fAppendAttrs);   }
-    SkSpan<const Varying>   varyings()         const { return SkSpan(fVaryings);      }
+    SkSpan<const Uniform>   uniforms()          const { return SkSpan(fUniforms);        }
+    SkSpan<const Attribute> staticAttributes()  const { return SkSpan(fStaticAttrs);     }
+    SkSpan<const Attribute> appendAttributes()  const { return SkSpan(fAppendAttrs);     }
+    SkSpan<const Uniform>   storageUniforms()   const { return SkSpan(fStorageUniforms); }
+    SkSpan<const Varying>   varyings()          const { return SkSpan(fVaryings);        }
 
+    // RenderSteps have control over how they modify the stencil buffer, with the requirement that
+    // a Renderer must ensure such that their last step leaves the stencil set to 0.
+    //
+    // RenderSteps cannot control depth settings as the depth attachment is used more fluidly to
+    // ensure rendering correctness. Instead, the render step's flags are the source of truth for
+    // its depth behavior. These depth settings must be consistent with those flags under the
+    // assumption that they are used by a renderpass that has depth and is combined with a paint
+    // that is opaque. ShaderInfo inspects the flags to relax the settings and the renderpass
+    // when possible.
     const DepthStencilSettings& depthStencilSettings() const { return fDepthStencilSettings; }
 
-    SkEnumBitMask<DepthStencilFlags> depthStencilFlags() const {
-        return (fDepthStencilSettings.fStencilTestEnabled
-                        ? DepthStencilFlags::kStencil : DepthStencilFlags::kNone) |
-               (fDepthStencilSettings.fDepthTestEnabled || fDepthStencilSettings.fDepthWriteEnabled
-                        ? DepthStencilFlags::kDepth : DepthStencilFlags::kNone);
+    bool usesStencil() const { return fDepthStencilSettings.second.enabled(); }
+    bool usesDepth() const { return fDepthStencilSettings.first.enabled(); }
+
+    // This is true if the RenderStep forces a renderpass to have a depth attachment, which is
+    // stricter than the depthWrite and depthTest provided in `depthStencilSettings()`, as those
+    // represent what should be set *if* depth ends up being used.
+    bool requiresDepth() const {
+        // NOTE: kUseNonAAInnerFill in a RenderStep will likely trigger the use of depth for the
+        // renderpass, but that is a result of it producing a second draw that is ordered front
+        // to back, and not strictly-speaking a requirement of the RenderStep's internal behavior.
+        // In the event that the inner fill isn't recorded, we don't want to force depth.
+        return !SkToBool(fFlags & (Flags::kAllowsSelfIntersection | Flags::kNoSelfIntersections));
     }
 
-    static const int kRenderStepIDVersion = 1;
+    SkEnumBitMask<DepthStencilFlags> depthStencilFlags() const {
+        return (this->usesStencil() ? DepthStencilFlags::kStencil : DepthStencilFlags::kNone) |
+               (this->usesDepth()   ? DepthStencilFlags::kDepth   : DepthStencilFlags::kNone);
+    }
+
+    static const int kRenderStepIDVersion = 2;
 
 #define ENUM1(BaseName) k##BaseName,
 #define ENUM2(BaseName, VariantName) k##BaseName##_##VariantName,
     enum class RenderStepID : uint32_t {
         SKGPU_RENDERSTEP_TYPES(ENUM1, ENUM2)
 
-        kLast = kVertices_TristripsColorTexCoords,
+        kLast = kWideTile,
     };
 #undef ENUM1
 #undef ENUM2
@@ -252,23 +291,33 @@ public:
     //    - Does each DrawList::Draw have extra space (e.g. 8 bytes) that steps can cache data in?
 protected:
 enum class Flags : unsigned {
-    kNone                   = 0x0000,
-    kFixed                  = 0x0001, // Uses explicit DrawWriter::draw functions
-    kAppendVertices         = 0x0002, // Appends vertices
-    kAppendInstances        = 0x0004, // Appends instances with static vertex count
-    kAppendDynamicInstances = 0x0008, // Appends instances with a flexible vertex count
-    kRequiresMSAA           = 0x0010, // MSAA is required for anti-aliasing
-    kPerformsShading        = 0x0020, // This step is responsible for shading/color output
-    kHasTextures            = 0x0040, // Adds textures via overridden texturesAndSamplersSkSL()
-    kEmitsCoverage          = 0x0080, // Adds analytic coverage via fragmentCoverageSkSL()
-    kLCDCoverage            = 0x0100, // The added analytic coverage is LCD, not single channel
-    kEmitsPrimitiveColor    = 0x0200, // Injects primitive color via fragmentColorSkSL()
-    kOutsetBoundsForAA      = 0x0400, // Drawn geometry will be outset beyond shape's bounds for AA
-    kUseNonAAInnerFill      = 0x0800, // Opt into Device recording extra inner fill draws
-    kIgnoreInverseFill      = 0x1000, // Rasterization treats all shapes as non-inverted for scissor
-    kInverseFillsScissor    = 0x2000, // Rasterization of inverse fills scissor geometrically
-    kVsUsesStorage          = 0x4000, // Does the vertex shader require storage buffer access?
-    kFsUsesStorage          = 0x8000, // Does the fragment shader require storage buffer access?
+    kNone                   = 0,
+
+    // Attribute/uniform/layout properties
+    kFixed                  = 1 << 0,  // Uses explicit DrawWriter::draw functions
+    kAppendVertices         = 1 << 1,  // Appends vertices
+    kAppendInstances        = 1 << 2,  // Appends instances with static vertex count
+    kAppendDynamicInstances = 1 << 3,  // Appends instances with a flexible vertex count
+    kVsUsesStorage          = 1 << 4,  // Does the vertex shader require storage buffer access?
+    kFsUsesStorage          = 1 << 5,  // Does the fragment shader require storage buffer access?
+
+    // Shading behavior
+    kPerformsShading        = 1 << 6,  // This step is responsible for shading/color output
+    kHasTextures            = 1 << 7,  // Adds textures via overridden texturesAndSamplersSkSL()
+    kEmitsCoverage          = 1 << 8,  // Adds analytic coverage via fragmentCoverageSkSL()
+    kLCDCoverage            = 1 << 9,  // The added analytic coverage is LCD, not single channel
+    kEmitsPrimitiveColor    = 1 << 10, // Injects primitive color via fragmentColorSkSL()
+
+    // Rasterization/geometry properties
+    kRequiresMSAA           = 1 << 11, // MSAA is required for anti-aliasing
+    kAllowsSelfIntersection = 1 << 12, // Rendered triangles can self-intersect, but that's desired.
+    kNoSelfIntersections    = 1 << 13, // Rendered triangles will never self-intersect (if neither
+                                       // this nor kAllowsSelfIntersection is set, the depth test is
+                                       // used to avoid self intersections).
+    kOutsetBoundsForAA      = 1 << 14, // Drawn geometry will be outset beyond shape's bounds for AA
+    kUseNonAAInnerFill      = 1 << 15, // Opt into Device recording extra inner fill draws
+    kIgnoreInverseFill      = 1 << 16, // Rasterization treats all shapes as noninverted for scissor
+    kInverseFillsScissor    = 1 << 17, // Rasterization of inverse fills scissor geometrically
 };
 SK_DECL_BITMASK_OPS_FRIENDS(Flags)
 
@@ -280,9 +329,10 @@ SK_DECL_BITMASK_OPS_FRIENDS(Flags)
                SkEnumBitMask<Flags> flags,
                std::initializer_list<Uniform> uniforms,
                PrimitiveType primitiveType,
-               DepthStencilSettings depthStencilSettings,
+               StencilSettings stencilSettings,
                SkSpan<const Attribute> staticAttrs,
                SkSpan<const Attribute> appendAttrs,
+               SkSpan<const Uniform> storageUniforms = {},
                SkSpan<const Varying> varyings = {});
 
 private:
@@ -294,11 +344,11 @@ private:
 
     static Coverage GetCoverage(SkEnumBitMask<Flags>);
 
-    RenderStepID fRenderStepID;
-    SkEnumBitMask<Flags> fFlags;
-    PrimitiveType        fPrimitiveType;
-
-    DepthStencilSettings fDepthStencilSettings;
+    RenderStepID                      fRenderStepID;
+    SkEnumBitMask<Flags>              fFlags;
+    SkEnumBitMask<PipelineStageFlags> fStorageBufferStages;
+    PrimitiveType                     fPrimitiveType;
+    DepthStencilSettings              fDepthStencilSettings;
 
     // TODO: When we always use C++17 for builds, we should be able to just let subclasses declare
     // constexpr arrays and point to those, but we need explicit storage for C++14.
@@ -309,11 +359,14 @@ private:
     std::vector<Uniform>   fUniforms;
     std::vector<Attribute> fStaticAttrs;
     std::vector<Attribute> fAppendAttrs;
+    std::vector<Uniform>   fStorageUniforms;
     std::vector<Varying>   fVaryings;
 
-    int    fUniformAlignment; // derived from the renderstep uniforms
-    size_t fStaticDataStride; // derived from vertex attribute set
-    size_t fAppendDataStride; // derived from instance attribute set
+    int    fUniformAlignment;        // derived from the renderstep uniforms
+    size_t fStaticDataStride;        // derived from vertex attribute set
+    size_t fAppendDataStride;        // derived from instance attribute set
+    size_t fStorageUniformStride;    // derived from storage uniform set
+    size_t fStorageUniformAlignment; // derived from storage uniform set
 };
 SK_MAKE_BITMASK_OPS(RenderStep::Flags)
 
@@ -347,6 +400,19 @@ public:
     }
     bool useNonAAInnerFill() const {
         return SkToBool(fStepFlags & StepFlags::kUseNonAAInnerFill);
+    }
+    bool usesStencil() const {
+        return SkToBool(fDepthStencilFlags & DepthStencilFlags::kStencil);
+    }
+    // TODO(michaelludwig): Once ShaderInfo controls basic depth settings,
+    // fDepthStencilFlags::kDepth will match requiresDepth() and this can be simplified.
+    bool requiresDepth() const {
+        for (int i = 0; i < fStepCount; ++i) {
+            if (fSteps[i]->requiresDepth()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     SkEnumBitMask<DepthStencilFlags> depthStencilFlags() const { return fDepthStencilFlags; }
@@ -386,10 +452,8 @@ private:
         // At least one step needs to actually shade.
         SkASSERT(fStepFlags & RenderStep::Flags::kPerformsShading);
         // A render step using non-AA inner fills with a second draw should not also be part of a
-        // multi-step renderer (to keep reasoning simple) and must use the LESS depth test.
-        SkASSERT(!this->useNonAAInnerFill() ||
-                 (fStepCount == 1 && fSteps[0]->depthStencilSettings().fDepthTestEnabled &&
-                  fSteps[0]->depthStencilSettings().fDepthCompareOp == CompareOp::kLess));
+        // multi-step renderer (to keep reasoning simple).
+        SkASSERT(!this->useNonAAInnerFill() || fStepCount == 1);
     }
 
     // For RendererProvider to manage initialization; it will never expose a Renderer that is only

@@ -1,0 +1,49 @@
+#
+# Copyright 2026 Google LLC
+#
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+#
+
+# This file is used by Clang's --warning-suppression-mappings flag to control
+# the -Wunsafe-buffer-usage warning.
+#
+# By default, we suppress the warning across the entire repository (using `src:*`).
+# To enforce the warning on a specific directory, add an `=emit` rule for it.
+# For example, `src:*src/gpu/graphite/*=emit` re-enables the warning for all
+# files within the gpu/graphite directory.
+
+[unsafe-buffer-usage]
+src:*
+
+# Only enabled in gpu/graphite for now, as a pilot.
+# See http://go/unsafe-buffer-skia
+src:*src/gpu/graphite/*=emit
+
+# Temporary exclusions.
+# TODO(564587252): Convert files to SK_UNSAFE_TODO instead of
+# file-wide suppressions.
+src:*src/gpu/graphite/DrawAtlas.cpp
+src:*src/gpu/graphite/KeyHelpers.h
+src:*src/gpu/graphite/RendererProvider.h
+src:*src/gpu/graphite/dawn/DawnTextureInfo.cpp
+src:*src/gpu/graphite/geom/EdgeAAQuad.h
+src:*src/gpu/graphite/geom/IntersectionTree.cpp
+src:*src/gpu/graphite/geom/Shape.cpp
+src:*src/gpu/graphite/geom/Transform.cpp
+src:*src/gpu/graphite/mtl/MtlCaps.mm
+src:*src/gpu/graphite/mtl/MtlCommandBuffer.mm
+src:*src/gpu/graphite/mtl/MtlComputePipeline.mm
+src:*src/gpu/graphite/mtl/MtlGraphicsPipeline.mm
+src:*src/gpu/graphite/mtl/MtlSampler.mm
+src:*src/gpu/graphite/render/MeshRenderStep.cpp
+src:*src/gpu/graphite/sparse_strips/*
+src:*src/gpu/graphite/text/TextAtlasManager.cpp
+src:*src/gpu/graphite/text/TextAtlasManager.h
+src:*src/gpu/graphite/vk/VulkanCaps.cpp
+src:*src/gpu/graphite/vk/VulkanCommandBuffer.cpp
+src:*src/gpu/graphite/vk/VulkanGraphicsPipeline.cpp
+src:*src/gpu/graphite/vk/VulkanSharedContext.cpp
+src:*src/gpu/graphite/vk/VulkanSpirvTransforms.cpp
+src:*src/gpu/graphite/vk/VulkanTexture.cpp
+src:*src/gpu/graphite/vk/VulkanTextureInfo.cpp

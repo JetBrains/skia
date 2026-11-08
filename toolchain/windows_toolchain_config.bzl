@@ -381,6 +381,27 @@ def _make_default_flags(clang_toolchain):
         flag_groups = [
             flag_group(
                 flags = [
+                    # Ignore dynamic runtime libraries to force static linking. This is *very*
+                    # important when compiling Rust code on our Windows CI machines, which don't
+                    # have MSVC installed. Without these flags, the rust toolchain makes some
+                    # helper tools (e.g. copy_file.exe) that depend on vcruntime140.dll and friends
+                    # and then runs those with a flag that removes any PATH modifications we've made
+                    # (e.g. adding win_toolchain from CIPD to the PATH). This means the Rust steps
+                    # will fail with exit status 0xc0000135 (STATUS_DLL_NOT_FOUND). Since we can't
+                    # pipe the location of the missing .dlls into the rules_rust toolchain, it's
+                    # easier to statically link the runtime instead of dynamically linking it.
+                    "/NODEFAULTLIB:msvcrt.lib",
+                    "/NODEFAULTLIB:msvcrtd.lib",
+                    "/NODEFAULTLIB:msvcprt.lib",
+                    "/NODEFAULTLIB:msvcprtd.lib",
+                    # Since we are ignoring the default ones, we need to list them ourselves to
+                    # make sure the static versions get linked in.
+                    "libcpmt.lib",  # Standard C++ library
+                    "libcmt.lib",  # core C runtime
+                    "libvcruntime.lib",  # Visual C++
+                    "libucrt.lib",  # Universal C Runtime
+                    "kernel32.lib",  # Win32 base API
+                    "ntdll.lib",  # native NT system services.
                     "/LIBPATH:" + full_msvc_lib + "/x64",
                     "/LIBPATH:" + full_win_sdk_lib + "/ucrt/x64",
                     "/LIBPATH:" + full_win_sdk_lib + "/um/x64",
@@ -388,16 +409,36 @@ def _make_default_flags(clang_toolchain):
             ),
         ],
     )
-    return [feature(
-        "default_flags",
-        enabled = True,
-        flag_sets = [
-            cxx_compile_includes,
-            cpp_compile_flags,
-            link_exe_flags_cpp,
-            link_exe_flags_rust,
-        ],
-    )]
+    return [
+        feature(
+            "default_flags",
+            enabled = True,
+            flag_sets = [
+                cxx_compile_includes,
+                cpp_compile_flags,
+                link_exe_flags_cpp,
+                link_exe_flags_rust,
+            ],
+        ),
+        # Bazel automatically enables the "opt" feature when --compilation_mode=opt is set.
+        feature(
+            "opt",
+            enabled = False,
+            flag_sets = [
+                flag_set(
+                    actions = [
+                        ACTION_NAMES.c_compile,
+                        ACTION_NAMES.cpp_compile,
+                    ],
+                    flag_groups = [
+                        flag_group(
+                            flags = ["-DNDEBUG"],
+                        ),
+                    ],
+                ),
+            ],
+        ),
+    ]
 
 def _make_diagnostic_flags():
     """Here we define the flags that can be turned on via features to yield debug info."""

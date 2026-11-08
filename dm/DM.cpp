@@ -18,6 +18,7 @@
 #include "src/core/SkChecksum.h"
 #include "src/core/SkColorPriv.h"
 #include "src/core/SkColorSpacePriv.h"
+#include "src/core/SkExecutors.h"
 #include "src/core/SkHalf.h"
 #include "src/core/SkLeanWindows.h"
 #include "src/core/SkMD5.h"
@@ -1634,7 +1635,11 @@ static void print_sinks() {
     }
 }
 
+#if defined(SK_BUILD_FOR_IOS)
+extern "C" int skia_ios_main(int argc, char** argv) {
+#else
 int main(int argc, char** argv) {
+#endif
 #if defined(SK_USE_PARTITION_ALLOC)
     // If available, use PartitionAlloc as the memory allocator for DM. This allows catching
     // additional memory errors in tests that would otherwise go unnoticed.
@@ -1688,7 +1693,7 @@ int main(int argc, char** argv) {
 #if defined(SK_ENABLE_SVG)
     SkGraphics::SetOpenTypeSVGDecoderFactory(SkSVGOpenTypeSVGDecoder::Make);
 #endif
-    SkTaskGroup::Enabler enabled(FLAGS_threads);
+    SkExecutors::Enabler enabled(FLAGS_threads);
     CodecUtils::RegisterAllAvailable();
     ToolUtils::RegisterAvailableTypefaceFactories();
 

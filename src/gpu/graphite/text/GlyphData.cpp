@@ -25,38 +25,54 @@ using MaskFormat = skgpu::MaskFormat;
 
 namespace skgpu::graphite {
 
-GlyphData::GlyphData(sk_sp<TextStrike> strike) : fTextStrike{std::move(strike)} {}
+GlyphData::GlyphData(sk_sp<TextStrike> strike,
+                     Recorder* recorder,
+                     sktext::gpu::RendererData renderData)
+        : fTextStrike{std::move(strike)}
+        , fRenderData(recorder->priv().getOrCreateAtlasProvider()
+                                     ->textAtlasManager()
+                                     ->resolveRendererData(renderData)) {}
 
 GlyphData::~GlyphData() = default;
 
-Glyph GlyphData::makeGlyphFromID(SkPackedGlyphID id, MaskFormat format) {
-    return Glyph{fTextStrike->getGlyph(id, format)};
+Glyph GlyphData::makeGlyphFromID(SkPackedGlyphID id) {
+    sktext::gpu::PackedGPUGlyphID gpuID{id,
+                                        fRenderData.maskFormat,
+                                        fRenderData.srcPadding,
+                                        fRenderData.isSDF};
+    return Glyph{fTextStrike->getGlyph(gpuID)};
 }
 
 std::tuple<bool, int> GlyphData::regenerateAtlas(int begin,
                                                  int end,
                                                  sktext::gpu::GlyphVector& glyphVector,
-                                                 MaskFormat maskFormat,
-                                                 int srcPadding,
                                                  Recorder* recorder) {
     SkASSERT(glyphVector.hasBackendData());
 
-    auto atlasManager = recorder->priv().atlasProvider()->textAtlasManager();
+    auto atlasManager = recorder->priv().getOrCreateAtlasProvider()->textAtlasManager();
     auto tokenTracker = recorder->priv().tokenTracker();
 
     // TODO: this is not a great place for this -- need a better way to init atlases when needed
     unsigned int numActiveProxies;
-    const sk_sp<TextureProxy>* proxies = atlasManager->getProxies(maskFormat, &numActiveProxies);
+    const sk_sp<TextureProxy>* proxies = atlasManager->getProxies(fRenderData.maskFormat,
+                                                                  &numActiveProxies);
     if (!proxies) {
         SkDebugf("Could not allocate backing texture for atlas\n");
         return {false, 0};
     }
 
-    uint64_t currentAtlasGen = atlasManager->atlasGeneration(maskFormat);
+    uint64_t currentAtlasGen = atlasManager->atlasGeneration(fRenderData.maskFormat);
 
     if (fAtlasGeneration != currentAtlasGen) {
         // Calculate the texture coordinates for the vertexes during first use (fAtlasGeneration
-        // is set to kInvalidAtlasGeneration) or the atlas has changed in subsequent calls.
+        // is set to kInvalidAtlasGeneration) or the atlas has changed in subsequent calls. Always
+        // reset the update, even when begin > 0. When begin > 0, this subrun was split across
+        // flushes and previously used glyphs in [0, begin) have an older token. If those glyphs are
+        // not used in [begin, end], they shouldn't be part of the next bulk update (and because
+        // we won't have updated the whole subrun in one go, we won't set `fAtlasGeneration` to take
+        // the fast path on reuse). If we do reuse the glyphs, we need the bulk update to have been
+        // reset so that the call to addGlyphToBulkAndSetUseToken() sees the first use with the new
+        // token and updates the atlas locator.
         fBulkUseUpdater.reset();
 
         SkBulkGlyphMetricsAndImages metricsAndImages{fTextStrike->strikeSpec()};
@@ -66,27 +82,32 @@ std::tuple<bool, int> GlyphData::regenerateAtlas(int begin,
         bool success = true;
         SkSpan<const Glyph> glyphs = glyphVector.accessBackendGlyphs<Glyph>();
         for (int i = begin; i < end; i++) {
-            SkASSERT(glyphs[i].entry().fGlyphEntryKey.fFormat == maskFormat);
-            if (!atlasManager->hasGlyph(maskFormat, glyphs[i].entry())) {
-                const SkGlyph& skGlyph = *metricsAndImages.glyph(glyphs[i].packedID());
-                auto code = atlasManager->addGlyphToAtlas(skGlyph, &glyphs[i].entry(), srcPadding);
+            const Glyph& glyph = glyphs[i];
+            SkASSERT(glyph.entry().fKey.maskFormat() == fRenderData.maskFormat);
+            SkASSERT(glyph.entry().fKey.padding() == fRenderData.srcPadding);
+            SkASSERT(glyph.entry().fKey.isSDF() == fRenderData.isSDF);
+            if (!atlasManager->hasGlyph(glyph.entry())) {
+                const SkGlyph& skGlyph = *metricsAndImages.glyph(glyph.packedID());
+                auto code = atlasManager->addGlyphToAtlas(skGlyph, &glyph.entry());
                 if (code != DrawAtlas::ErrorCode::kSucceeded) {
                     success = code != DrawAtlas::ErrorCode::kError;
                     break;
                 }
             }
             atlasManager->addGlyphToBulkAndSetUseToken(&fBulkUseUpdater,
-                                                       maskFormat,
-                                                       glyphs[i].entry(),
+                                                       glyph.entry(),
                                                        tokenTracker->nextFlushToken());
             glyphsPlacedInAtlas++;
         }
 
-        // Update atlas generation if there are no more glyphs to put in the atlas.
-        if (success && begin + glyphsPlacedInAtlas == glyphVector.glyphCount()) {
+        // Update atlas generation if there are no more glyphs to put in the atlas. We can only do
+        // this if we successfully checked/added the entire glyph vector in one pass. Otherwise, on
+        // a partial update, some of the previous glyphs of the subrun that were already drawn could
+        // have been evicted to make room for these remaining glyphs.
+        if (success && begin == 0 && glyphsPlacedInAtlas == glyphVector.glyphCount()) {
             // Need to get the freshest value of the atlas' generation because
             // updateTextureCoordinates may have changed it.
-            fAtlasGeneration = atlasManager->atlasGeneration(maskFormat);
+            fAtlasGeneration = atlasManager->atlasGeneration(fRenderData.maskFormat);
         }
 
         return {success, glyphsPlacedInAtlas};
@@ -96,7 +117,7 @@ std::tuple<bool, int> GlyphData::regenerateAtlas(int begin,
             // The atlas hasn't changed and the texture coordinates are all still valid. Update
             // all the plots used to the new use token.
             atlasManager->setUseTokenBulk(
-                    fBulkUseUpdater, tokenTracker->nextFlushToken(), maskFormat);
+                    fBulkUseUpdater, tokenTracker->nextFlushToken(), fRenderData.maskFormat);
         }
         return {true, end - begin};
     }

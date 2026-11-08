@@ -8,16 +8,24 @@
 #define skgpu_graphite_BufferManager_DEFINED
 
 #include "include/core/SkRefCnt.h"
+#include "include/private/SkAlign.h"
+#include "include/private/SkAssert.h"
+#include "include/private/SkMath.h"
 #include "include/private/SkTArray.h"
+#include "include/private/SkTo.h"
 #include "src/core/SkTHash.h"
 #include "src/gpu/BufferWriter.h"
 #include "src/gpu/graphite/Buffer.h"
 #include "src/gpu/graphite/ResourceTypes.h"
 #include "src/gpu/graphite/UploadBufferManager.h"
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
+#include <numeric>
+#include <optional>
 #include <string_view>
 #include <utility>
 
@@ -444,6 +452,49 @@ private:
     // transfer buffers from the UploadManager, remember so that the next Recording will fail.
     bool fMappingFailed = false;
 };
+
+/**
+ * BufferAligner contains helper functions for buffer sub-allocation and alignment math.
+ */
+namespace BufferAligner {
+
+SK_ALWAYS_INLINE uint32_t ValidateCountAndStride(size_t count, size_t stride, size_t headroom,
+                                                 uint32_t alignment) {
+    // size_t may just be uint32_t, so this ensures we have enough bits to
+    // compute the required byte product.
+    const uint64_t count64 = SkTo<uint64_t>(count);
+    const uint64_t stride64 = SkTo<uint64_t>(stride);
+    const uint64_t bytes64 = count64 * stride64;
+    const uint64_t headroom64 = SkTo<uint64_t>(headroom);
+    const uint64_t bytesWithHeadroom64 = std::max(headroom64, bytes64);
+    if (count64 > std::numeric_limits<uint32_t>::max() ||
+        stride64 > std::numeric_limits<uint32_t>::max() ||
+        bytes64 > std::numeric_limits<uint32_t>::max() ||
+        headroom64 > std::numeric_limits<uint32_t>::max() ||
+        bytesWithHeadroom64 > std::numeric_limits<uint32_t>::max() - (alignment + 1)) {
+        // Return 0 to skip further allocation attempts.
+        return 0;
+    }
+    // Since count64 and stride64 fit into 32-bits, their product won't overflow a 64-bit
+    // multiply, and we've confirmed product fits into 32-bits with head room to be aligned w/o
+    // overflow.
+    return SkTo<uint32_t>(bytesWithHeadroom64);
+}
+
+SK_ALWAYS_INLINE uint32_t LcmAlignment(uint32_t alignMaybePow2, uint32_t alignProbNonPow2) {
+    SkASSERT(alignMaybePow2 != 0 && alignProbNonPow2 != 0);
+    if (alignMaybePow2 == 1 ||
+        alignMaybePow2 == alignProbNonPow2 ||
+        (SkIsPow2(alignMaybePow2) &&
+         alignProbNonPow2 > alignMaybePow2 &&
+         (alignProbNonPow2 & (alignMaybePow2 - 1)) == 0)) {
+        // Trivial LCM since alignProbNonPow2 is the same or a larger multiple of alignMaybePow2
+        return alignProbNonPow2;
+    } else {
+        return std::lcm(alignMaybePow2, alignProbNonPow2);
+    }
+}
+}  // namespace BufferAligner
 
 /**
  * The StaticBufferManager is the one-time-only analog to DrawBufferManager and provides "static"

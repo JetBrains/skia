@@ -5,12 +5,14 @@
  * found in the LICENSE file.
  */
 
+#include <array>
 #include "include/private/SkGainmapInfo.h"
 
 #include "include/core/SkColor.h"
 #include "include/core/SkData.h"
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkStream.h"
+#include "include/private/SkTo.h"
 #include "src/codec/SkCodecPriv.h"
 #include "src/core/SkEndian.h"
 #include "src/core/SkStreamPriv.h"
@@ -55,6 +57,10 @@ static bool read_rational_be(SkStream* s, float* value) {
     if (!SkStreamPriv::ReadU32BE(s, &denominator)) {
         return false;
     }
+    // ISO 21496-1 requires denominators to be non-zero.
+    if (denominator == 0) {
+        return false;
+    }
     *value = static_cast<float>(static_cast<double>(numerator) / static_cast<double>(denominator));
     return true;
 }
@@ -66,6 +72,10 @@ static bool read_positive_rational_be(SkStream* s, float* value) {
         return false;
     }
     if (!SkStreamPriv::ReadU32BE(s, &denominator)) {
+        return false;
+    }
+    // ISO 21496-1 requires denominators to be non-zero.
+    if (denominator == 0) {
         return false;
     }
     *value = static_cast<float>(static_cast<double>(numerator) / static_cast<double>(denominator));
@@ -119,31 +129,37 @@ static bool read_iso_gainmap_info(SkStream* s, SkGainmapInfo& info) {
         return false;
     }
 
-    float gainMapMin[3] = {0.f};
-    float gainMapMax[3] = {0.f};
-    float gamma[3] = {0.f};
-    float baseOffset[3] = {0.f};
-    float altrOffset[3] = {0.f};
+    std::array<float, 3> gainMapMin = {0.f};
+    std::array<float, 3> gainMapMax = {0.f};
+    std::array<float, 3> gamma = {0.f};
+    std::array<float, 3> baseOffset = {0.f};
+    std::array<float, 3> altrOffset = {0.f};
 
     int channelCount = isMultiChannel ? 3 : 1;
     for (int i = 0; i < channelCount; ++i) {
-        if (!read_rational_be(s, gainMapMin + i)) {
+        if (!read_rational_be(s, &gainMapMin[i])) {
             SkCodecPrintf("Failed to read ISO 21496-1 gainmap minimum.\n");
             return false;
         }
-        if (!read_rational_be(s, gainMapMax + i)) {
+        if (!read_rational_be(s, &gainMapMax[i])) {
             SkCodecPrintf("Failed to read ISO 21496-1 gainmap maximum.\n");
             return false;
         }
-        if (!read_positive_rational_be(s, gamma + i)) {
+        if (!read_positive_rational_be(s, &gamma[i])) {
             SkCodecPrintf("Failed to read ISO 21496-1 gamma.\n");
             return false;
         }
-        if (!read_rational_be(s, baseOffset + i)) {
+        // ISO 21496-1 requires gamma to be strictly positive, and `fGainmapGamma` is its
+        // reciprocal.
+        if (gamma[i] == 0.f) {
+            SkCodecPrintf("Invalid ISO 21496-1 gamma.\n");
+            return false;
+        }
+        if (!read_rational_be(s, &baseOffset[i])) {
             SkCodecPrintf("Failed to read ISO 21496-1 base offset.\n");
             return false;
         }
-        if (!read_rational_be(s, altrOffset + i)) {
+        if (!read_rational_be(s, &altrOffset[i])) {
             SkCodecPrintf("Failed to read ISO 21496-1 altr offset.\n");
             return false;
         }

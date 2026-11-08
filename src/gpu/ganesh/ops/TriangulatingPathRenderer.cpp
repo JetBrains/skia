@@ -177,11 +177,25 @@ public:
         if (fCanMapVB) {
             fVertexBuffer->unmap();
         } else {
-            fVertexBuffer->updateData(fVertices,
-                                      /*offset=*/0,
-                                      /*size=*/actualCount*fLockStride,
-                                      /*preserve=*/false);
-            sk_free(fVertices);
+            if (fVertexBuffer->updateData(fVertices,
+                                          /*offset=*/0,
+                                          /*size=*/actualCount*fLockStride,
+                                          /*preserve=*/false)) {
+                sk_free(fVertices);
+            } else {
+                // If we fail the upload, the most likely issue is GPU memory pressure. Instead of
+                // discarding the triangulation work, shrink the fVertices allocation and use it to
+                // create CPU-backed VertexData. This stores the CPU vertices in the thread-safe
+                // cache so that subsequent draws can attempt to instantiate the GPU buffer in
+                // createNonAAMesh().
+                fVertexBuffer.reset();
+                fVertices = sk_realloc_throw(fVertices, actualCount * fLockStride);
+                fVertexData =
+                        GrThreadSafeCache::MakeVertexData(fVertices, actualCount, fLockStride);
+                fVertices = nullptr;
+                fLockStride = 0;
+                return;
+            }
         }
 
         fVertexData = GrThreadSafeCache::MakeVertexData(std::move(fVertexBuffer),
@@ -383,7 +397,10 @@ private:
                 sk_make_sp<UniqueKeyInvalidator>(key, target->contextUniqueID()));
         }
 
-        fMesh = CreateMesh(target, fVertexData->refGpuBuffer(), 0, fVertexData->numVertices());
+        // If buffer upload failed in unlock(), fMesh remains null and the draw is skipped.
+        if (fVertexData->gpuBuffer()) {
+            fMesh = CreateMesh(target, fVertexData->refGpuBuffer(), 0, fVertexData->numVertices());
+        }
     }
 
     void createAAMesh(GrMeshDrawTarget* target) {
@@ -592,7 +609,11 @@ GR_DRAW_OP_TEST_DEFINE(TriangulatingPathOp) {
     SkIRect devClipBounds = SkIRect::MakeLTRB(
         random->nextU(), random->nextU(), random->nextU(), random->nextU());
     devClipBounds.sort();
-    static constexpr GrAAType kAATypes[] = {GrAAType::kNone, GrAAType::kMSAA, GrAAType::kCoverage};
+    static constexpr auto kAATypes = std::to_array<GrAAType>({
+            GrAAType::kNone,
+            GrAAType::kMSAA,
+            GrAAType::kCoverage,
+    });
     GrAAType aaType;
     do {
         aaType = kAATypes[random->nextULessThan(std::size(kAATypes))];

@@ -534,6 +534,27 @@ DEF_TEST(region_very_large, reporter) {
     REPORTER_ASSERT(reporter, smallRegion.contains(499, 499));
 }
 
+DEF_TEST(region_b510359475, reporter) {
+    SkPath path = SkPathBuilder(SkPathFillType::kInverseEvenOdd)
+                          .moveTo(-1.75556736e+09f, 1.75556736e+09f)
+                          .lineTo(-0.00604508677f, 0.00604508677f)
+                          .quadTo(-0.00604508677f, 0.00604508677f, -0.00604508677f, 0.00604508677f)
+                          .lineTo(214328.828f, -214328.828f)
+                          .quadTo(214328.828f, -214328.828f, 214328.828f, -214328.828f)
+                          .lineTo(214328.828f, -214328.828f)
+                          .quadTo(214328.828f, -214328.828f, 214328.828f, -214328.828f)
+                          .lineTo(214328.812f, -214328.812f)
+                          .detach();
+
+    SkIRect clipBounds = {-1755567360, -214329, 214329, 1755567360};
+    SkRegion region;
+
+    // This should fail gracefully and quickly (returning false) instead of timing out.
+    bool ok = region.setPath(path, SkRegion(clipBounds));
+    REPORTER_ASSERT(reporter, !ok);
+    REPORTER_ASSERT(reporter, region.isEmpty());
+}
+
 DEF_TEST(SkRegion_Iterator_StepsThroughAllScanlines, reporter) {
     SkRegion rgn1;
     rgn1.op({12, 10, 17, 20}, SkRegion::kUnion_Op);
@@ -699,7 +720,7 @@ DEF_TEST(Region_setRects, reporter) {
     const SkIRect rEmpty[] = {{0, 0, 0, 0}, {10, 10, 10, 10}};
     test("empty_rects", rEmpty);
 
-    SkIRect grid[100];
+    std::array<SkIRect, 100> grid;
     for (int y = 0; y < 10; ++y) {
         for (int x = 0; x < 10; ++x) {
             grid[y * 10 + x] = SkIRect::MakeXYWH(x * 20, y * 20, 10, 10);

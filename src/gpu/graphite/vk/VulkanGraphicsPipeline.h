@@ -88,7 +88,7 @@ private:
 class VulkanGraphicsPipeline final : public GraphicsPipeline {
 public:
     inline static constexpr unsigned int kCombinedUniformIndex = 0; // Paint AND renderstep!
-    inline static constexpr unsigned int kGradientBufferIndex = 1;
+    inline static constexpr unsigned int kStorageBufferIndex = 1;
     inline static constexpr unsigned int kMaxNumUniformBuffers = 2;
 
     // For now, rigidly assign all descriptor types to be at statically-defined set indices.
@@ -105,10 +105,7 @@ public:
 
     // Define a static DescriptorData to represent input attachments which have the same values
     // across all pipelines (we currently only ever use one input attachment within a set).
-    inline static const DescriptorData kInputAttachmentDescriptor = {
-            DescriptorType::kInputAttachment, /*count=*/1,
-            /*bindingIdx=*/0, // We only expect to encounter one input attachment
-            PipelineStageFlags::kFragmentShader};
+    static const DescriptorData& GetInputAttachmentDescriptor();
 
     static sk_sp<VulkanGraphicsPipeline> Make(VulkanSharedContext*,
                                               const RuntimeEffectDictionary*,
@@ -168,7 +165,8 @@ private:
                            PrimitiveType primitiveType,
                            const DepthStencilSettings& depthStencilSettings,
                            VertexInputBindingDescriptions&& vertexBindingDescriptions,
-                           VertexInputAttributeDescriptions&& vertexAttributeDescriptions);
+                           VertexInputAttributeDescriptions&& vertexAttributeDescriptions,
+                           bool hasPaintParamAttributes);
 
     void freeGpuData() override;
 
@@ -209,6 +207,7 @@ private:
     PrimitiveType fPrimitiveType;
     DepthStencilSettings fDepthStencilSettings;
     RenderStep::RenderStepID fRenderStepID;
+    bool fHasPaintParamAttributes = false;
     // The Vulkan vertex attribute descriptions are cached to avoid recomputing them every time.
     VertexInputBindingDescriptions fVertexBindingDescriptions;
     VertexInputAttributeDescriptions fVertexAttributeDescriptions;

@@ -7,6 +7,7 @@
 
 #include "bench/GpuTools.h"
 #include "bench/SKPBench.h"
+#include "include/core/SkPictureRecorder.h"
 #include "include/core/SkSurface.h"
 #include "include/gpu/ganesh/GrDirectContext.h"
 #include "include/gpu/ganesh/SkSurfaceGanesh.h"
@@ -22,28 +23,18 @@
 
 using namespace skia_private;
 
-// These CPU tile sizes are not good per se, but they are similar to what Chrome uses.
-static DEFINE_int(CPUbenchTileW, 256, "Tile width  used for CPU SKP playback.");
-static DEFINE_int(CPUbenchTileH, 256, "Tile height used for CPU SKP playback.");
-
-static DEFINE_int(GPUbenchTileW, 1600, "Tile width  used for GPU SKP playback.");
-static DEFINE_int(GPUbenchTileH, 512, "Tile height used for GPU SKP playback.");
-
 SKPBench::SKPBench(const char* name, const SkPicture* pic, const SkIRect& clip, SkScalar scale,
-                   bool doLooping)
-    : fPic(SkRef(pic))
-    , fClip(clip)
-    , fScale(scale)
-    , fName(name)
-    , fDoLooping(doLooping) {
-    fUniqueName.printf("%s_%.2g", name, scale);  // Scale makes this unqiue for perf.skia.org traces.
+                   const SkISize& tileSize, bool doLooping)
+        : fPic(SkRef(pic))
+        , fClip(clip)
+        , fScale(scale)
+        , fTileSize(tileSize)
+        , fName(name)
+        , fDoLooping(doLooping) {
+    fUniqueName.printf("%s_%.2g", name, scale); // Scale makes this unique for perf.skia.org traces.
 }
 
-SKPBench::~SKPBench() {
-    for (int i = 0; i < fSurfaces.size(); ++i) {
-        fSurfaces[i]->unref();
-    }
-}
+SKPBench::~SKPBench() {}
 
 const char* SKPBench::onGetName() {
     return fName.c_str();
@@ -53,60 +44,71 @@ const char* SKPBench::onGetUniqueName() {
     return fUniqueName.c_str();
 }
 
-void SKPBench::onPerCanvasPreDraw(SkCanvas* canvas) {
-    SkIRect bounds = canvas->getDeviceClipBounds();
-    bounds.intersect(fClip);
-    bounds.intersect(fPic->cullRect().roundOut());
-    SkAssertResult(!bounds.isEmpty());
+// Subdivides the given bounds into a grid of tiles according to fTileSize, records each tile's
+// SkPicture, creates the corresponding SkSurface, and stores TileInfo entries in fTiles.
+void SKPBench::createTiles(SkCanvas* canvas, const SkIRect& bounds, const SkISize& tileSize) {
+    int xTiles = SkScalarCeilToInt(bounds.width()  / SkIntToScalar(tileSize.width()));
+    int yTiles = SkScalarCeilToInt(bounds.height() / SkIntToScalar(tileSize.height()));
 
-#if defined(SK_GRAPHITE)
-    const bool gpu = canvas->recordingContext() != nullptr || canvas->recorder() != nullptr;
-#else
-    const bool gpu = canvas->recordingContext() != nullptr;
-#endif
-    int tileW = gpu ? FLAGS_GPUbenchTileW : FLAGS_CPUbenchTileW,
-        tileH = gpu ? FLAGS_GPUbenchTileH : FLAGS_CPUbenchTileH;
+    fTiles.reserve(xTiles * yTiles);
 
-    tileW = std::min(tileW, bounds.width());
-    tileH = std::min(tileH, bounds.height());
+    SkImageInfo ii = canvas->imageInfo().makeWH(tileSize.width(), tileSize.height());
 
-    int xTiles = SkScalarCeilToInt(bounds.width()  / SkIntToScalar(tileW));
-    int yTiles = SkScalarCeilToInt(bounds.height() / SkIntToScalar(tileH));
-
-    fSurfaces.reserve_exact(fSurfaces.size() + (xTiles * yTiles));
-    fTileRects.reserve(xTiles * yTiles);
-
-    SkImageInfo ii = canvas->imageInfo().makeWH(tileW, tileH);
-
-    for (int y = bounds.fTop; y < bounds.fBottom; y += tileH) {
-        for (int x = bounds.fLeft; x < bounds.fRight; x += tileW) {
-            const SkIRect tileRect = SkIRect::MakeXYWH(x, y, tileW, tileH);
-            *fTileRects.append() = tileRect;
-            fSurfaces.emplace_back(canvas->makeSurface(ii));
+    for (int y = bounds.fTop; y < bounds.fBottom; y += tileSize.height()) {
+        for (int x = bounds.fLeft; x < bounds.fRight; x += tileSize.width()) {
+            const SkIRect tileRect = SkIRect::MakeXYWH(x, y, tileSize.width(), tileSize.height());
 
             // Never want the contents of a tile to include stuff the parent
             // canvas clips out
             SkRect clip = SkRect::Make(bounds);
             clip.offset(-SkIntToScalar(tileRect.fLeft), -SkIntToScalar(tileRect.fTop));
-            fSurfaces.back()->getCanvas()->clipRect(clip);
 
-            fSurfaces.back()->getCanvas()->setMatrix(canvas->getLocalToDevice());
-            fSurfaces.back()->getCanvas()->scale(fScale, fScale);
+            SkM44 mat = canvas->getLocalToDevice();
+            mat.preScale(fScale, fScale);
+
+            // Record the commands to draw what's only in the tile from the original picture.
+            SkPictureRecorder recorder;
+            SkCanvas* tiledCanvas = recorder.beginRecording(SkRect::Make(tileRect));
+            fPic->playback(tiledCanvas);
+            sk_sp<SkPicture> tiledPicture = recorder.finishRecordingAsPicture();
+            sk_sp<SkSurface> tiledSurface = canvas->makeSurface(ii);
+            SkASSERT(tiledSurface != nullptr);
+
+            fTiles.emplace_back(tiledPicture, tiledSurface, tileRect, clip, mat);
         }
+    }
+}
+
+void SKPBench::onPerCanvasPreDraw(SkCanvas* canvas) {
+    SkIRect bounds = canvas->getDeviceClipBounds();
+    if (!fClip.isEmpty()) {
+        bounds.intersect(fClip);
+    }
+    bounds.intersect(fPic->cullRect().roundOut());
+    SkAssertResult(!bounds.isEmpty());
+
+    if (this->shouldTile()) {
+        SkISize tileSize = SkISize::Make(std::min(fTileSize.width(), bounds.width()),
+                                         std::min(fTileSize.height(), bounds.height()));
+        this->createTiles(canvas, bounds, tileSize);
+    } else {
+        // The whole picture is one tile. This will playback the whole picture and reduce ops to
+        // fit just the bounds, whether clipped or not.
+        this->createTiles(canvas, bounds, bounds.size());
     }
 }
 
 void SKPBench::onPerCanvasPostDraw(SkCanvas* canvas) {
     // Draw the last set of tiles into the main canvas in case we're
     // saving the images
-    for (int i = 0; i < fTileRects.size(); ++i) {
-        sk_sp<SkImage> image(fSurfaces[i]->makeImageSnapshot());
+    for (const TileInfo& tile : fTiles) {
+        sk_sp<SkImage> image(tile.surface()->makeImageSnapshot());
         canvas->drawImage(image,
-                          SkIntToScalar(fTileRects[i].fLeft), SkIntToScalar(fTileRects[i].fTop));
+                          SkIntToScalar(tile.tileRect().fLeft),
+                          SkIntToScalar(tile.tileRect().fTop));
     }
 
-    fSurfaces.clear();
-    fTileRects.clear();
+    fTiles.clear();
 }
 
 bool SKPBench::isSuitableFor(Backend backend) {
@@ -114,10 +116,14 @@ bool SKPBench::isSuitableFor(Backend backend) {
 }
 
 SkISize SKPBench::onGetSize() {
-    return SkISize::Make(fClip.width(), fClip.height());
+    if (fClip.isEmpty()) {
+        return fPic->cullRect().roundOut().size();
+    } else {
+        return SkISize::Make(fClip.width(), fClip.height());
+    }
 }
 
-void SKPBench::onDrawFrame(int loops, SkCanvas* canvas, std::function<void()> submitFrame) {
+void SKPBench::onDrawFrame(int loops, SkCanvas* /* canvas */, std::function<void()> submitFrame) {
     SkASSERT(fDoLooping || 1 == loops);
     for (int i = 0; i < loops; ++i) {
         this->drawPicture();
@@ -127,19 +133,25 @@ void SKPBench::onDrawFrame(int loops, SkCanvas* canvas, std::function<void()> su
     }
 }
 
-void SKPBench::drawMPDPicture() {
-    // TODO: remove me
-}
-
 void SKPBench::drawPicture() {
-    for (int j = 0; j < fTileRects.size(); ++j) {
-        const SkMatrix trans = SkMatrix::Translate(-fTileRects[j].fLeft / fScale,
-                                                   -fTileRects[j].fTop / fScale);
-        fSurfaces[j]->getCanvas()->drawPicture(fPic.get(), &trans, nullptr);
+    for (const TileInfo& tile : fTiles) {
+        const SkMatrix trans = SkMatrix::Translate(-tile.tileRect().fLeft / fScale,
+                                                   -tile.tileRect().fTop / fScale);
+
+        SkCanvas* canvas = tile.surface()->getCanvas();
+
+        SkAutoCanvasRestore acr(canvas, /* doSave= */ false);
+        canvas->clear(SK_ColorWHITE);
+
+        canvas->save();
+        canvas->clipRect(tile.clipRect());
+        canvas->setMatrix(tile.mat());
+
+        canvas->drawPicture(tile.picture(), &trans, nullptr);
     }
 
-    for (int j = 0; j < fTileRects.size(); ++j) {
-        skgpu::Flush(fSurfaces[j].get());
+    for (const TileInfo& tile : fTiles) {
+        skgpu::Flush(tile.surface());
     }
 }
 

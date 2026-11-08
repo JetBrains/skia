@@ -32,8 +32,10 @@ namespace skgpu::graphite {
 AnalyticBlurRenderStep::AnalyticBlurRenderStep(Layout layout)
         : RenderStep(layout,
                      RenderStepID::kAnalyticBlur,
-                     Flags::kPerformsShading | Flags::kHasTextures | Flags::kEmitsCoverage |
-                     Flags::kAppendVertices,
+                     Flags::kPerformsShading | Flags::kHasTextures
+                                             | Flags::kEmitsCoverage
+                                             | Flags::kNoSelfIntersections
+                                             | Flags::kAppendVertices,
                      /*uniforms=*/
                      {{"localToDevice", SkSLType::kFloat4x4},
                       {"deviceToScaledShape", SkSLType::kFloat3x3},
@@ -42,17 +44,18 @@ AnalyticBlurRenderStep::AnalyticBlurRenderStep(Layout layout)
                       {"shapeType", SkSLType::kInt},
                       {"depth", SkSLType::kFloat}},
                      PrimitiveType::kTriangles,
-                     kDirectDepthLessPass,
+                     /*stencilSettings=*/{},
                      /*staticAttrs=*/ {},
                      /*appendAttrs=*/
                      {{{"position", VertexAttribType::kFloat2, SkSLType::kFloat2},
                       {"ssboIndex", VertexAttribType::kUInt, SkSLType::kUInt}}},
+                     /*storageUniforms=*/{},
                      /*varyings=*/
                      // scaledShapeCoords are the fragment coordinates in local shape space, where
                      // the shape has been scaled to device space but not translated or rotated.
                      {{{"scaledShapeCoords", SkSLType::kFloat2}}}) {}
 
-std::string AnalyticBlurRenderStep::vertexSkSL() const {
+std::string AnalyticBlurRenderStep::vertexSkSL(const RootNodesInfo&) const {
     return
         "float4 devPosition = localToDevice * float4(position, depth, 1.0);\n"
         "stepLocalCoords = position;\n"
@@ -73,6 +76,7 @@ const char* AnalyticBlurRenderStep::fragmentCoverageSkSL() const {
 }
 
 void AnalyticBlurRenderStep::writeVertices(DrawWriter* writer,
+                                           StorageContext* /*storageContext*/,
                                            const DrawParams& params,
                                            uint32_t ssboIndex) const {
     const Rect& r = params.geometry().analyticBlurMask().drawBounds();

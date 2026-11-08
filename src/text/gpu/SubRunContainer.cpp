@@ -5,6 +5,7 @@
  * found in the LICENSE file.
  */
 
+#include <array>
 #include "src/text/gpu/SubRunContainer.h"
 
 #include "include/core/SkCanvas.h"
@@ -725,7 +726,10 @@ public:
                   drawOrigin,
                   paint,
                   std::move(subRunStorage),
-                  {/* isSDF = */ false, fVertexFiller.isLCD(), fVertexFiller.maskFormat()});
+                  {this->glyphSrcPadding(),
+                   /* isSDF = */ false,
+                   fVertexFiller.isLCD(),
+                   fVertexFiller.maskFormat()});
     }
 
     int unflattenSize() const override {
@@ -841,7 +845,10 @@ public:
                   drawOrigin,
                   paint,
                   std::move(subRunStorage),
-                  {/* isSDF = */ false, fVertexFiller.isLCD(), fVertexFiller.maskFormat()});
+                  {this->glyphSrcPadding(),
+                   /* isSDF = */ false,
+                   fVertexFiller.isLCD(),
+                   fVertexFiller.maskFormat()});
     }
 
     std::tuple<bool, SkRect> deviceRectAndNeedsTransform(
@@ -972,7 +979,10 @@ public:
               sk_sp<SkRefCnt> subRunStorage,
               const AtlasDrawDelegate& drawAtlas) const override {
         drawAtlas(this, drawOrigin, paint, std::move(subRunStorage),
-                  {/* isSDF = */true, /* isLCD = */fUseLCDText, skgpu::MaskFormat::kA8});
+                  {this->glyphSrcPadding(),
+                   /* isSDF = */true,
+                   /* isLCD = */fUseLCDText,
+                   skgpu::MaskFormat::kA8});
     }
 
     std::tuple<bool, SkRect> deviceRectAndNeedsTransform(
@@ -1047,7 +1057,7 @@ SubRunOwner SubRun::MakeFromBuffer(SkReadBuffer& buffer,
                                   SubRunAllocator*,
                                   const SkStrikeClient*);
 
-    static Maker makers[kSubRunStreamTagCount] = {
+    static std::array<Maker, kSubRunStreamTagCount> makers = {
             nullptr,                                             // 0 index is bad.
             DirectMaskSubRun::MakeFromBuffer,
 #if !defined(SK_DISABLE_SDF_TEXT)

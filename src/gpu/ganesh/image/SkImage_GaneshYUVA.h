@@ -70,12 +70,19 @@ public:
     sk_sp<SkImage> onReinterpretColorSpace(sk_sp<SkColorSpace>) const final;
 
     // From SkImage_GaneshBase.h
-    GrSemaphoresSubmitted flush(GrDirectContext*, const GrFlushInfo&) const override;
+    GrDirectContext::FlushResult flush(GrDirectContext*, const GrFlushInfo&) const override;
 
    std::tuple<GrSurfaceProxyView, GrColorType> asView(GrRecordingContext*,
                                                       skgpu::Mipmapped,
                                                       GrImageTexGenPolicy,
                                                       GrRenderTargetProxy*) const override;
+
+    // Flattens the multiplanar YUVA data into a single RGBA texture view.
+    // If |subset| is provided, the subsampled chroma planes are clamped to
+    // it. |subset| must be contained in the image bounds.
+    std::tuple<GrSurfaceProxyView, GrColorType> flattenToView(GrRecordingContext*,
+                                                              skgpu::Mipmapped,
+                                                              const SkRect* subset) const;
 
     std::unique_ptr<GrFragmentProcessor> asFragmentProcessor(skgpu::ganesh::SurfaceDrawContext*,
                                                              SkSamplingOptions,

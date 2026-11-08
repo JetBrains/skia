@@ -9,17 +9,21 @@
 
 #include "include/gpu/graphite/BackendTexture.h"
 #include "include/gpu/graphite/TextureInfo.h"
+#include "include/private/SkAttributes.h"
 #include "src/core/SkTraceEvent.h"
 #include "src/gpu/graphite/Caps.h"
 #include "src/gpu/graphite/CommandBuffer.h"
 #include "src/gpu/graphite/ContextUtils.h"
 #include "src/gpu/graphite/GpuWorkSubmission.h"
 #include "src/gpu/graphite/GraphicsPipelineDesc.h"
+#include "src/gpu/graphite/PipelineCreationTask.h"
 #include "src/gpu/graphite/RendererProvider.h"
 #include "src/gpu/graphite/ResourceCache.h"
 #include "src/gpu/graphite/ResourceProvider.h"
+#include "src/gpu/graphite/RuntimeEffectDictionary.h"
 #include "src/gpu/graphite/SerializationUtils.h"
 #include "src/gpu/graphite/ThreadSafeResourceProvider.h"
+
 
 namespace skgpu::graphite {
 
@@ -28,7 +32,6 @@ static Layout get_binding_layout(const Caps* caps) {
     return caps->storageBufferSupport() ? reqs.fStorageBufferLayout : reqs.fUniformBufferLayout;
 }
 
-// TODO (robertphillips): make use of executor here
 SharedContext::SharedContext(std::unique_ptr<const Caps> caps,
                              BackendApi backend,
                              SkExecutor* executor,
@@ -36,8 +39,8 @@ SharedContext::SharedContext(std::unique_ptr<const Caps> caps,
     : fCaps(std::move(caps))
     , fBackend(backend)
     , fGlobalCache()
-    , fPipelineManager() // TODO(robertphillips): pass in executor here
-    , fShaderDictionary(get_binding_layout(fCaps.get()), userDefinedKnownRuntimeEffects) {}
+    , fShaderDictionary(get_binding_layout(fCaps.get()), userDefinedKnownRuntimeEffects)
+    , fPipelineManager(executor) {}
 
 SharedContext::~SharedContext() {
     // TODO: add disconnect?
@@ -98,7 +101,7 @@ sk_sp<GraphicsPipeline> SharedContext::findOrCreateGraphicsPipeline(
 
         static const char* kNames[2] = { "BeginBuildN", "BeginBuildP" };
         TRACE_EVENT_INSTANT2("skia.gpu",
-                             TRACE_STR_STATIC(kNames[forPrecompile]),
+                             TRACE_STR_STATIC(SK_UNSAFE_TODO(kNames[forPrecompile])),
                              TRACE_EVENT_SCOPE_THREAD,
                              "key", pipelineKey.hash(),
                              "compilationID", compilationID);

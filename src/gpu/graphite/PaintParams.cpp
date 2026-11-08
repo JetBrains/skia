@@ -13,6 +13,7 @@
 #include "src/core/SkBlenderBase.h"
 #include "src/core/SkColorSpacePriv.h"
 #include "src/core/SkImageInfoPriv.h"
+#include "src/core/SkMeshPriv.h"
 #include "src/effects/colorfilters/SkColorFilterBase.h"
 #include "src/gpu/Blend.h"
 #include "src/gpu/DitherUtils.h"
@@ -221,6 +222,15 @@ SkColor4f PaintParams::Color4fPrepForDst(SkColor4f srcColor, const SkColorInfo& 
     return result;
 }
 
+PaintParams PaintParams::makeWithMesh(const SkMesh& mesh) const {
+    PaintParams copy = *this;
+    copy.fMeshSpec = mesh.spec();
+    copy.fMeshChildren = mesh.children();
+    copy.fPrimitiveColorSpace = SkMeshSpecificationPriv::ColorSpace(*mesh.spec());
+    copy.fPrimitiveAlphaType = SkMeshSpecificationPriv::AlphaType(*mesh.spec());
+    return copy;
+}
+
 #if defined(SK_DEBUG)
 PaintParams PaintParams::MakeOpaque(const PaintParams& paint) {
     PaintParams opaque = paint;
@@ -312,7 +322,8 @@ bool ShadingParams::handlePrimitiveColor(const KeyContext& keyContext) const {
         if (primColorOverride) {
             SolidColorShaderBlock::AddBlock(keyContext, *primColorOverride);
         } else {
-            AddPrimitiveColor(keyContext, fPaint.skipPrimitiveColorXform());
+            AddPrimitiveColor(keyContext, fPaint.skipPrimitiveColorXform(),
+                              fPaint.primitiveColorSpace(), fPaint.primitiveAlphaType());
         }
         return false;
     }
@@ -329,7 +340,8 @@ bool ShadingParams::handlePrimitiveColor(const KeyContext& keyContext) const {
             if (primColorOverride) {
                 SolidColorShaderBlock::AddBlock(keyContext, *primColorOverride);
             } else {
-                AddPrimitiveColor(keyContext, fPaint.skipPrimitiveColorXform());
+                AddPrimitiveColor(keyContext, fPaint.skipPrimitiveColorXform(),
+                                  fPaint.primitiveColorSpace(), fPaint.primitiveAlphaType());
             }
         });
     if (primBlend.has_value() && srcIsOpaque) {
@@ -410,6 +422,7 @@ bool ShadingParams::handleDithering(const KeyContext& keyContext) const {
 }
 
 void ShadingParams::handleClipping(const KeyContext& keyContext) const {
+    SkASSERT(!fNonMSAAClip.isEmpty() || fClipShader);
     if (!fNonMSAAClip.isEmpty()) {
 #if defined(SK_GRAPHITE_USE_LEGACY_RRECT_CLIP_SHADER)
         const AnalyticClip& analyticClip = fNonMSAAClip.fAnalyticClip;
@@ -480,8 +493,9 @@ void ShadingParams::handleClipping(const KeyContext& keyContext) const {
             AddAnalyticClip(keyContext, fNonMSAAClip);
         }
 #endif // SK_GRAPHITE_USE_LEGACY_RRECT_CLIP_SHADER
-    } else if (fClipShader) {
+    } else {
         // Since there's no analytic clip, the clipping root node can be fClipShader directly.
+        SkASSERT(fClipShader);
         AddToKey(keyContext, fClipShader);
     }
 }
@@ -494,9 +508,11 @@ std::optional<ShadingParams::Result> ShadingParams::toKey(const KeyContext& keyC
     SkDEBUGCODE(bool paintDependsOnDst = true;)
 
     // Root Node 0 is the source color, which is the output of all effects post dithering
+    keyContext.paintParamsKeyBuilder()->addRootBlockHeader(RootBlockType::kSrcColor);
     bool isOpaque = this->handleDithering(keyContext);
 
     // Root Node 1 is the final blender
+    keyContext.paintParamsKeyBuilder()->addRootBlockHeader(RootBlockType::kFinalBlend);
     SkEnumBitMask<DstUsage> dstUsage = fDstUsage;
     if (fPaint.finalBlender()) {
         AddToKey(keyContext, fPaint.finalBlender());
@@ -556,7 +572,16 @@ std::optional<ShadingParams::Result> ShadingParams::toKey(const KeyContext& keyC
     }
 
     // Optional Root Node 2 is the clip
-    this->handleClipping(keyContext);
+    if (fClipShader || !fNonMSAAClip.isEmpty()) {
+        keyContext.paintParamsKeyBuilder()->addRootBlockHeader(RootBlockType::kClip);
+        this->handleClipping(keyContext);
+    }
+
+    // Optional Root Node 3 is a mesh shader
+    if (fPaint.meshSpec()) {
+        keyContext.paintParamsKeyBuilder()->addRootBlockHeader(RootBlockType::kMeshShader);
+        MeshShaderBlock::AddBlock(keyContext, fPaint.meshSpec(), fPaint.meshChildren());
+    }
 
     // If dstUsage is not kNone, then kDependsOnDst must be set (all other bits only apply *because*
     // the shading depends on dst).
@@ -637,18 +662,18 @@ UniquePaintParamsID ShadingParams::validateOpacityOptimization(const KeyContext&
                                 Coverage::kNone,
                                 keyContext.targetFormat()};
 
-    // Create a new KeyContext that writes to a different key builder and pipeline data gatherer. We
-    // have to use the original gradient cache in the StorageBufferManager since its global state
-    // impacts the other extracted uniforms, but everything will be a cache hit in the second call
-    // to toKey(), so it shouldn't change size.
-    SkDEBUGCODE(const int gradSize = keyContext.storageBufferManager()->gradientSize();)
+    // Create a new KeyContext that writes to a different key builder and pipeline data gatherer.
+    // Since the opaqueKeyContext will inherit the drawContext (and therefore storageContext) from
+    // the existing keyContext, verify that the cache hit by checking the size of the storageContext
+    // cache before and after creation.
+    SkASSERT(keyContext.drawContext()->storageContext());
+    SkDEBUGCODE(const int scSize = keyContext.drawContext()->storageContext()->size());
 
     const Layout layout = keyContext.pipelineDataGatherer()->uniformManager()->layout();
     PaintParamsKeyBuilder opaqueBuilder{keyContext.dict()};
     PipelineDataGatherer opaqueGatherer{layout};
     KeyContext opaqueContext{keyContext.recorder(),
                              keyContext.drawContext(),
-                             keyContext.storageBufferManager(),
                              &opaqueBuilder,
                              &opaqueGatherer,
                              keyContext.local2Dev(),
@@ -663,7 +688,7 @@ UniquePaintParamsID ShadingParams::validateOpacityOptimization(const KeyContext&
     auto [actualOpaqueID, actualDstUsage] = *result;
     SkASSERT(actualDstUsage == DstUsage::kNone);
     opaqueGatherer.checkEquivalent(keyContext.pipelineDataGatherer());
-    SkASSERT(keyContext.storageBufferManager()->gradientSize() == gradSize);
+    SkASSERT(keyContext.drawContext()->storageContext()->size() == scSize);
 
     return actualOpaqueID;
 }

@@ -20,10 +20,22 @@
     "cq_config": {}
   },
   {
+    "name": "BazelBuild-modules_canvaskit-ck_full_webgl2_release_debugger-linux_x64",
+    "cq_config": {
+      "location_regexes": [
+        "modules/canvaskit/.*",
+        "tools/debugger/.*"
+      ]
+    }
+  },
+  {
     "name": "BazelBuild-use_ganesh_gl-for_windows_x64_release-windows_x64"
   },
   {
     "name": "BazelBuild-viewer-debug-linux_x64"
+  },
+  {
+    "name": "BazelBuild-viewer-for_windows_x64_release-windows_x64"
   },
   {
     "name": "BazelBuild-viewer-release-linux_x64"
@@ -63,10 +75,6 @@
   },
   {
     "name": "BazelTest-external_client-use_ganesh_vulkan-default-linux_x64"
-  },
-  {
-    "name": "BazelTest-external_client-use_graphite_native_vulkan-default-linux_x64",
-    "cq_config": {}
   },
   {
     "name": "BazelTest-external_client-use_skresources-default-linux_x64"
@@ -465,6 +473,9 @@
     "name": "Build-Ubuntu24.04-Clang-x86_64-Debug-RustPNG"
   },
   {
+    "name": "Build-Ubuntu24.04-Clang-x86_64-Debug-RustPNGAndroid"
+  },
+  {
     "name": "Build-Ubuntu24.04-Clang-x86_64-Debug-SK_USE_DISCARDABLE_SCALEDIMAGECACHE"
   },
   {
@@ -606,6 +617,15 @@
   },
   {
     "name": "Build-Ubuntu24.04-EMCC-wasm-Release-StandaloneWasm"
+  },
+  {
+    "name": "Build-Ubuntu26.04-Clang-x86_64-Debug-Graphite_Dawn_Vulkan"
+  },
+  {
+    "name": "Build-Ubuntu26.04-Clang-x86_64-Debug-Graphite_Native_Vulkan"
+  },
+  {
+    "name": "Build-Ubuntu26.04-Clang-x86_64-Debug-Vulkan"
   },
   {
     "name": "Build-Win-Clang-arm64-Debug"
@@ -776,12 +796,6 @@
     "cq_config": {}
   },
   {
-    "name": "BuildStats-Ubuntu24.04-Clang-x86_64-Release"
-  },
-  {
-    "name": "BuildStats-Ubuntu24.04-Clang-x86_64-Release-Vulkan"
-  },
-  {
     "name": "Canary-Android"
   },
   {
@@ -873,12 +887,6 @@
     "name": "Perf-Android-Clang-AndroidOne-GPU-Mali400MP2-arm-Release-All-Android_SkottieTracing"
   },
   {
-    "name": "Perf-Android-Clang-GalaxyS20-GPU-MaliG77-arm64-Release-All-Android"
-  },
-  {
-    "name": "Perf-Android-Clang-GalaxyS20-GPU-MaliG77-arm64-Release-All-Android_Vulkan"
-  },
-  {
     "name": "Perf-Android-Clang-GalaxyS24-GPU-Adreno750-arm64-Release-All-Android"
   },
   {
@@ -931,12 +939,6 @@
   },
   {
     "name": "Perf-Android-Clang-Pixel4-GPU-Adreno640-arm64-Release-All-Android_Vulkan"
-  },
-  {
-    "name": "Perf-Android-Clang-Pixel4XL-GPU-Adreno640-arm64-Release-All-Android"
-  },
-  {
-    "name": "Perf-Android-Clang-Pixel4XL-GPU-Adreno640-arm64-Release-All-Android_Vulkan"
   },
   {
     "name": "Perf-Android-Clang-Pixel5-GPU-Adreno620-arm64-Release-All-Android"
@@ -1164,6 +1166,15 @@
     "name": "Perf-Ubuntu24.04-Clang-NUC5PPYH-GPU-IntelHD405-x86_64-Release-All-Vulkan"
   },
   {
+    "name": "Perf-Ubuntu26.04-Clang-FalconRAK-GPU-IntelArcB570-x86_64-Debug-All-Graphite_Dawn_Vulkan"
+  },
+  {
+    "name": "Perf-Ubuntu26.04-Clang-FalconRAK-GPU-IntelArcB570-x86_64-Debug-All-Graphite_Native_Vulkan"
+  },
+  {
+    "name": "Perf-Ubuntu26.04-Clang-FalconRAK-GPU-IntelArcB570-x86_64-Debug-All-Vulkan"
+  },
+  {
     "name": "Perf-Win11-Clang-AlphaR2-GPU-RadeonR9M470X-x86_64-Release-All-ANGLE"
   },
   {
@@ -1344,24 +1355,6 @@
     "name": "Test-Android-Clang-AndroidOne-GPU-Mali400MP2-arm-Release-All-Android"
   },
   {
-    "name": "Test-Android-Clang-GalaxyS20-GPU-MaliG77-arm64-Debug-All-Android"
-  },
-  {
-    "name": "Test-Android-Clang-GalaxyS20-GPU-MaliG77-arm64-Debug-All-Android_Vulkan"
-  },
-  {
-    "name": "Test-Android-Clang-GalaxyS20-GPU-MaliG77-arm64-Debug-All-Android_Vulkan_Protected"
-  },
-  {
-    "name": "Test-Android-Clang-GalaxyS20-GPU-MaliG77-arm64-Release-All-Android"
-  },
-  {
-    "name": "Test-Android-Clang-GalaxyS20-GPU-MaliG77-arm64-Release-All-Android_NativeFonts"
-  },
-  {
-    "name": "Test-Android-Clang-GalaxyS20-GPU-MaliG77-arm64-Release-All-Android_Vulkan"
-  },
-  {
     "name": "Test-Android-Clang-GalaxyS24-CPU-Adreno750-arm64-Release-All-Android_NativeFonts_AndroidNDKFonts"
   },
   {
@@ -1456,27 +1449,6 @@
   },
   {
     "name": "Test-Android-Clang-Pixel4-GPU-Adreno640-arm64-Release-All-Android_Vulkan"
-  },
-  {
-    "name": "Test-Android-Clang-Pixel4XL-GPU-Adreno640-arm64-Debug-All-Android"
-  },
-  {
-    "name": "Test-Android-Clang-Pixel4XL-GPU-Adreno640-arm64-Debug-All-Android_Vulkan"
-  },
-  {
-    "name": "Test-Android-Clang-Pixel4XL-GPU-Adreno640-arm64-Release-All-Android"
-  },
-  {
-    "name": "Test-Android-Clang-Pixel4XL-GPU-Adreno640-arm64-Release-All-Android_Vulkan"
-  },
-  {
-    "name": "Test-Android-Clang-Pixel4a-CPU-Snapdragon730G-arm64-Debug-All-Android_HWASAN"
-  },
-  {
-    "name": "Test-Android-Clang-Pixel4a-GPU-Adreno618-arm64-Debug-All-Android_Graphite_Native_Vulkan_HWASAN"
-  },
-  {
-    "name": "Test-Android-Clang-Pixel4a-GPU-Adreno618-arm64-Debug-All-Android_HWASAN"
   },
   {
     "name": "Test-Android-Clang-Pixel5-GPU-Adreno620-arm64-Debug-All-Android"
@@ -1884,6 +1856,20 @@
     "name": "Test-Ubuntu24.04-Clang-GCE-CPU-AVX2-x86_64-Debug-All-RustPNG"
   },
   {
+    "name": "Test-Ubuntu24.04-Clang-GCE-CPU-AVX2-x86_64-Debug-All-RustPNGAndroid",
+    "cq_config": {
+      "location_regexes": [
+        "include/(codec|encode)/SkPng.*",
+        "src/(codec|encode)/SkPng.*",
+        "(include|src)/codec/Sk(AndroidCodec|SampledCodec).*",
+        "rust/(common|png)/.*",
+        "bazel/external/image-png/.*",
+        "MODULE.bazel",
+        "tests/(SkPngRust|PngGainmap|AndroidCodec).*"
+      ]
+    }
+  },
+  {
     "name": "Test-Ubuntu24.04-Clang-GCE-CPU-AVX2-x86_64-Debug-All-SK_USE_DISCARDABLE_SCALEDIMAGECACHE"
   },
   {
@@ -2062,12 +2048,24 @@
     }
   },
   {
+    "name": "Test-Ubuntu24.04-EMCC-GCE-CPU-AVX2-wasm-Release-All-StandaloneWasm"
+  },
+  {
     "name": "Test-Ubuntu24.04-EMCC-GCE-GPU-AVX2-wasm-Release-All-CanvasKit",
     "cq_config": {
       "location_regexes": [
         "modules/canvaskit/.*"
       ]
     }
+  },
+  {
+    "name": "Test-Ubuntu26.04-Clang-FalconRAK-GPU-IntelArcB570-x86_64-Debug-All-Graphite_Dawn_Vulkan"
+  },
+  {
+    "name": "Test-Ubuntu26.04-Clang-FalconRAK-GPU-IntelArcB570-x86_64-Debug-All-Graphite_Native_Vulkan"
+  },
+  {
+    "name": "Test-Ubuntu26.04-Clang-FalconRAK-GPU-IntelArcB570-x86_64-Debug-All-Vulkan"
   },
   {
     "name": "Test-Win11-Clang-AlphaR2-GPU-RadeonR9M470X-x86_64-Debug-All-ANGLE"

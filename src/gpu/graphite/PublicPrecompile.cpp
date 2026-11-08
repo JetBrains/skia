@@ -10,6 +10,7 @@
 #include "include/gpu/graphite/PrecompileContext.h"
 #include "include/gpu/graphite/precompile/Precompile.h"
 #include "include/gpu/graphite/precompile/PrecompileColorFilter.h"
+#include "include/private/SkAttributes.h"
 #include "include/private/SkLog.h"
 #include "src/gpu/graphite/Caps.h"
 #include "src/gpu/graphite/ContextPriv.h"
@@ -36,8 +37,7 @@ namespace {
 
 using namespace skgpu::graphite;
 
-void compile(const RendererProvider* rendererProvider,
-             ResourceProvider* resourceProvider,
+void compile(SharedContext* sharedContext,
              const KeyContext& keyContext,
              UniquePaintParamsID uniqueID,
              DrawTypeFlags drawTypes,
@@ -45,6 +45,10 @@ void compile(const RendererProvider* rendererProvider,
              bool withPrimitiveBlender,
              Coverage coverage) {
 
+    const RendererProvider* rendererProvider = sharedContext->rendererProvider();
+    PipelineManager* pipelineManager = sharedContext->pipelineManager();
+
+    const TextureFormat dsFormat = renderPassDesc.fDepthStencilAttachment.fFormat;
     for (const Renderer* r : rendererProvider->renderers()) {
         if (!(r->drawTypes() & drawTypes)) {
             continue;
@@ -62,17 +66,34 @@ void compile(const RendererProvider* rendererProvider,
             continue;
         }
 
+        if (r->requiresDepth() && !TextureFormatHasDepth(dsFormat)) {
+            // This renderer requires depth, which is incompatible with the requested render pass,
+            // so skip it.
+            continue;
+        }
+        if (r->usesStencil() && !TextureFormatHasStencil(dsFormat)) {
+            // This renderer requires stencil, which is incompatible with the requested render pass,
+            // so skip it.
+            continue;
+        }
+        if (r->requiresMSAA() && renderPassDesc.fSampleCount == SampleCount::k1) {
+            // This renderer expects MSAA, which is incompatible with the requested render pass,
+            // so skip it.
+            continue;
+        }
+
         for (auto&& s : r->steps()) {
             SkASSERT(!s->performsShading() || s->emitsPrimitiveColor() == withPrimitiveBlender);
 
             UniquePaintParamsID paintID = s->performsShading() ? uniqueID
                                                                : UniquePaintParamsID::Invalid();
 
-            GraphicsPipelineHandle handle = resourceProvider->createGraphicsPipelineHandle(
+            GraphicsPipelineHandle handle = pipelineManager->createHandle(
+                    sharedContext,
+                    keyContext.rtEffectDict(),
                     { s->renderStepID(), paintID },
                     renderPassDesc,
                     PipelineCreationFlags::kForPrecompilation);
-            resourceProvider->startPipelineCreationTask(keyContext.rtEffectDict(), handle);
         }
     }
 }
@@ -88,7 +109,8 @@ void Precompile(PrecompileContext* precompileContext,
 
     ShaderCodeDictionary* dict = precompileContext->priv().shaderCodeDictionary();
     const RendererProvider* rendererProvider = precompileContext->priv().rendererProvider();
-    ResourceProvider* resourceProvider = precompileContext->priv().resourceProvider();
+    SharedContext* sharedContext = precompileContext->priv().sharedContext();
+    PipelineManager* pipelineManager = sharedContext->pipelineManager();
     const Caps* caps = precompileContext->priv().caps();
 
     sk_sp<RuntimeEffectDictionary> rtEffectDict = sk_make_sp<RuntimeEffectDictionary>();
@@ -125,7 +147,7 @@ void Precompile(PrecompileContext* precompileContext,
             const RenderPassDesc renderPassDesc =
                     RenderPassDesc::Make(caps,
                                          info,
-                                         kLoadOps[loadOpIndex],
+                                         SK_UNSAFE_TODO(kLoadOps[loadOpIndex]),
                                          StoreOp::kStore,
                                          rpp.fDSFlags,
                                          /* clearColor= */ { .0f, .0f, .0f, .0f },
@@ -135,19 +157,16 @@ void Precompile(PrecompileContext* precompileContext,
 
             SkColorInfo ci(rpp.fDstCT, kPremul_SkAlphaType, rpp.fDstCS);
 
-            // The PipelineDataGatherer handles uniform data; the StorageBufferManager may handle
-            // mixed data. In the pre-compile case we don't need to record the uniform data but the
-            // process of generating it is required to create the correct key.
-            StorageBufferManager storageBufferManager;
+            // The PipelineDataGatherer handles uniform data; in the pre-compile case we don't need
+            // to record the uniform data but the process of generating it is required to create the
+            // correct key.
             PipelineDataGatherer gatherer(Layout::kMetal);
             PaintParamsKeyBuilder builder(dict);
-            KeyContext keyContext(caps, &storageBufferManager, &builder, &gatherer, dict,
-                                  rtEffectDict, ci);
+            KeyContext keyContext(caps, &builder, &gatherer, dict, rtEffectDict, ci);
 
             for (Coverage coverage : { Coverage::kNone, Coverage::kSingleChannel }) {
                 PrecompileCombinations(
-                        rendererProvider,
-                        resourceProvider,
+                        sharedContext,
                         options, keyContext,
                         static_cast<DrawTypeFlags>(drawTypes & ~(DrawTypeFlags::kBitmapText_Color |
                                                                  DrawTypeFlags::kBitmapText_LCD |
@@ -166,11 +185,14 @@ void Precompile(PrecompileContext* precompileContext,
                 const RenderStep* renderStep =
                     rendererProvider->lookup(RenderStep::RenderStepID::kCoverBounds_InverseCover);
 
-                GraphicsPipelineHandle handle = resourceProvider->createGraphicsPipelineHandle(
-                        { renderStep->renderStepID(), UniquePaintParamsID::Invalid() },
-                        renderPassDesc,
-                        PipelineCreationFlags::kForPrecompilation);
-                resourceProvider->startPipelineCreationTask(keyContext.rtEffectDict(), handle);
+                if (rpp.fDSFlags & DepthStencilFlags::kStencil) {
+                    GraphicsPipelineHandle handle = pipelineManager->createHandle(
+                            sharedContext,
+                            keyContext.rtEffectDict(),
+                            { renderStep->renderStepID(), UniquePaintParamsID::Invalid() },
+                            renderPassDesc,
+                            PipelineCreationFlags::kForPrecompilation);
+                }
             }
 
             if (drawTypes & DrawTypeFlags::kBitmapText_Color) {
@@ -183,8 +205,7 @@ void Precompile(PrecompileContext* precompileContext,
                 tmp.priv().setPrimitiveBlendMode(SkBlendMode::kDstIn);
 
                 // ARGB text doesn't emit coverage and always has a primitive blender
-                PrecompileCombinations(rendererProvider,
-                                       resourceProvider,
+                PrecompileCombinations(sharedContext,
                                        tmp,
                                        keyContext,
                                        reducedTypes,
@@ -200,8 +221,7 @@ void Precompile(PrecompileContext* precompileContext,
                                                                 DrawTypeFlags::kAnalyticClip));
                 // LCD-based text always emits LCD coverage but never has primitiveBlenders
                 PrecompileCombinations(
-                        rendererProvider,
-                        resourceProvider,
+                        sharedContext,
                         options, keyContext,
                         reducedTypes,
                         /* withPrimitiveBlender= */ false,
@@ -216,8 +236,7 @@ void Precompile(PrecompileContext* precompileContext,
                 // drawVertices w/ colors use a primitiveBlender while those w/o don't. It never
                 // emits coverage.
                 for (bool withPrimitiveBlender : { true, false }) {
-                    PrecompileCombinations(rendererProvider,
-                                           resourceProvider,
+                    PrecompileCombinations(sharedContext,
                                            options, keyContext,
                                            reducedTypes,
                                            withPrimitiveBlender,
@@ -236,8 +255,7 @@ void Precompile(PrecompileContext* precompileContext,
 
                 // Analytic
                 {
-                    PrecompileCombinations(rendererProvider,
-                                           resourceProvider,
+                    PrecompileCombinations(sharedContext,
                                            newOptions, keyContext,
                                            reducedTypes,
                                            /* withPrimitiveBlender= */ false,
@@ -255,8 +273,7 @@ void Precompile(PrecompileContext* precompileContext,
                     newOptions.priv().setPrimitiveBlendMode(SkBlendMode::kDst);
                     newOptions.priv().setSkipColorXform(true);
 
-                    PrecompileCombinations(rendererProvider,
-                                           resourceProvider,
+                    PrecompileCombinations(sharedContext,
                                            newOptions, keyContext,
                                            reducedTypes,
                                            /* withPrimitiveBlender= */ true,
@@ -268,8 +285,7 @@ void Precompile(PrecompileContext* precompileContext,
     }
 }
 
-void PrecompileCombinations(const RendererProvider* rendererProvider,
-                            ResourceProvider* resourceProvider,
+void PrecompileCombinations(SharedContext* sharedContext,
                             const PaintOptions& options,
                             const KeyContext& keyContext,
                             DrawTypeFlags drawTypes,
@@ -286,13 +302,12 @@ void PrecompileCombinations(const RendererProvider* rendererProvider,
         withPrimitiveBlender,
         coverage,
         renderPassDescIn,
-        [rendererProvider, resourceProvider, &keyContext](UniquePaintParamsID uniqueID,
-                                                          DrawTypeFlags drawTypes,
-                                                          bool withPrimitiveBlender,
-                                                          Coverage coverage,
-                                                          const RenderPassDesc& renderPassDesc) {
-               compile(rendererProvider,
-                       resourceProvider,
+        [sharedContext, &keyContext](UniquePaintParamsID uniqueID,
+                                     DrawTypeFlags drawTypes,
+                                     bool withPrimitiveBlender,
+                                     Coverage coverage,
+                                     const RenderPassDesc& renderPassDesc) {
+               compile(sharedContext,
                        keyContext,
                        uniqueID,
                        drawTypes,

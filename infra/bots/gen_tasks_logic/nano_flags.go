@@ -24,6 +24,7 @@ func (b *TaskBuilder) nanobenchFlags(doUpload bool) {
 	configs := []string{}
 	if b.CPU() {
 		args = append(args, "--nogpu")
+
 		configs = append(configs, "8888", "nonrendering")
 
 		if b.ExtraConfig("BonusConfigs") {
@@ -45,14 +46,14 @@ func (b *TaskBuilder) nanobenchFlags(doUpload bool) {
 
 		glPrefix := "gl"
 		sampleCount := 8
-		if b.MatchOs("Android") || b.Os("iOS") {
+		if b.MatchOs("Android", "iOS") {
 			sampleCount = 4
 			glPrefix = "gles"
 			// iOS crashes with MSAA (skbug.com/40037602)
 			// Nexus7 (Tegra3) does not support MSAA.
 			// MSAA is disabled on Pixel3a (https://b.corp.google.com/issues/143074513).
 			// MSAA is disabled on Pixel5 (https://skbug.com/40042528).
-			if b.Os("iOS") || b.Model("Nexus7", "Pixel3a", "Pixel5") {
+			if b.MatchOs("iOS") || b.Model("Nexus7", "Pixel3a", "Pixel5") {
 				sampleCount = 0
 			}
 		} else if b.MatchGpu("AppleM") {
@@ -119,7 +120,7 @@ func (b *TaskBuilder) nanobenchFlags(doUpload bool) {
 		}
 		if b.ExtraConfig("Metal") && !b.ExtraConfig("Graphite") {
 			configs = []string{"mtl"}
-			if b.Os("iOS") || b.GPU("AppleM3") {
+			if b.MatchOs("iOS") || b.GPU("AppleM3") {
 				configs = append(configs, "mtlmsaa4")
 			} else {
 				configs = append(configs, "mtlmsaa8")
@@ -196,7 +197,7 @@ func (b *TaskBuilder) nanobenchFlags(doUpload bool) {
 
 	// Use 4 internal msaa samples on mobile, AppleM*, and with Graphite, otherwise 8.
 	args = append(args, "--internalSamples")
-	if b.MatchOs("Android") || b.Os("iOS") || b.MatchGpu("AppleM") || b.ExtraConfig("Graphite") {
+	if b.MatchOs("Android", "iOS") || b.MatchGpu("AppleM") || b.ExtraConfig("Graphite") {
 		args = append(args, "4")
 	} else {
 		args = append(args, "8")
@@ -225,7 +226,7 @@ func (b *TaskBuilder) nanobenchFlags(doUpload bool) {
 		match = append(match, "~patch_grid") // skbug.com/40033959
 		match = append(match, "~desk_carsvg")
 	}
-	if b.Os("iOS") {
+	if b.MatchOs("iOS") {
 		match = append(match, "~blurroundrect")
 		match = append(match, "~patch_grid") // skbug.com/40033959
 		match = append(match, "~desk_carsvg")
@@ -233,7 +234,7 @@ func (b *TaskBuilder) nanobenchFlags(doUpload bool) {
 		match = append(match, "~path_hairline")
 		match = append(match, "~GLInstancedArraysBench") // skbug.com/40035868
 	}
-	if b.Os("iOS") && b.ExtraConfig("Metal") && !b.ExtraConfig("Graphite") {
+	if b.MatchOs("iOS") && b.ExtraConfig("Metal") && !b.ExtraConfig("Graphite") {
 		// skbug.com/40041128
 		match = append(match, "~compositing_images_tile_size")
 	}
@@ -308,12 +309,22 @@ func (b *TaskBuilder) nanobenchFlags(doUpload bool) {
 		// Render tiled, single-frame skps with an extremely tall canvas that hopefully allows for
 		// us to tile most or all of the content.
 		args = append(args,
-			"--sourceType", "skp", "--clip", "0,0,1600,16384", "--GPUbenchTileW", "1600",
-			"--GPUbenchTileH", "512", "--samples", "1", "--loops", "1", "--config", "gldmsaa",
+			"--sourceType", "skp", "--clip", "0,0,1600,16384", "--tile", "1600,512",
+			"--samples", "1", "--loops", "1", "--config", "gldmsaa",
 			"--dmsaaStatsDump")
 		// Don't collect stats on the skps generated from vector content. We want these to actually
 		// trigger dmsaa.
 		match = append(match, "~svg", "~chalkboard", "~motionmark")
+	} else {
+		// TODO(sarahrust): This is a default clip and tile value but should be derived from the task instead.
+		args = append(args, "--clip", "0,0,1000,1000")
+		if b.CPU() {
+			// Default tile width and height used for CPU SKP playback.
+			args = append(args, "--tile", "256,256")
+		} else if b.GPU() {
+			// Default tile width and height used for GPU SKP playback.
+			args = append(args, "--tile", "1600,512")
+		}
 	}
 
 	// TODO (thomsmit): Remove this when testing is over
@@ -345,7 +356,7 @@ func (b *TaskBuilder) nanobenchFlags(doUpload bool) {
 
 	// Add the EXACT name of the test/benchmark you would like to run alone
 	// example:
-	// 		match_override := "desk_chalkboard"
+	//   match_override := "desk_chalkboard"
 	match_override := ""
 	if len(match) > 0 && len(match_override) == 0 {
 		args = append(args, "--match")
@@ -366,7 +377,7 @@ func (b *TaskBuilder) nanobenchFlags(doUpload bool) {
 		b.recipeProp("images", "true")
 	}
 	b.recipeProp("resources", "true")
-	if !b.Os("iOS") {
+	if !b.MatchOs("iOS") {
 		b.asset("skp")
 		b.recipeProp("skps", "true")
 	}

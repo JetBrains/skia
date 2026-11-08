@@ -167,30 +167,45 @@ void fill3D(SkZip<Quad, const Glyph, const VertexData> quadData,
 
 namespace skgpu::ganesh {
 
-GlyphData::GlyphData(sk_sp<TextStrike> strike) : fTextStrike{std::move(strike)} {}
+GlyphData::GlyphData(sk_sp<TextStrike> strike,
+                     GrAtlasManager* atlasMgr,
+                     MaskFormat maskFormat,
+                     int srcPadding,
+                     bool isSDF)
+        : fTextStrike{std::move(strike)}
+        , fIsSDF(isSDF) {
+    std::tie(fResolvedMaskFormat, fSrcPadding) =
+            atlasMgr->resolveFormatAndPadding(maskFormat, srcPadding);
+}
 
 GlyphData::~GlyphData() = default;
 
-Glyph GlyphData::makeGlyphFromID(SkPackedGlyphID id, MaskFormat format) {
-    return Glyph{fTextStrike->getGlyph(id, format)};
+Glyph GlyphData::makeGlyphFromID(SkPackedGlyphID id) {
+    sktext::gpu::PackedGPUGlyphID gpuID{id, fResolvedMaskFormat, fSrcPadding, fIsSDF};
+    return Glyph{fTextStrike->getGlyph(gpuID)};
 }
 
 std::tuple<bool, int> GlyphData::regenerateAtlas(int begin,
                                                  int end,
                                                  sktext::gpu::GlyphVector& glyphVector,
-                                                 MaskFormat maskFormat,
-                                                 int srcPadding,
                                                  GrMeshDrawTarget* target) {
     SkASSERT(glyphVector.hasBackendData());
     GrAtlasManager* atlasManager = target->atlasManager();
     GrDeferredUploadTarget* uploadTarget = target->deferredUploadTarget();
 
-    uint64_t currentAtlasGen = atlasManager->atlasGeneration(maskFormat);
+    uint64_t currentAtlasGen = atlasManager->atlasGeneration(fResolvedMaskFormat);
 
     if (fAtlasGeneration != currentAtlasGen) {
         SkSpan<const Glyph> glyphSpan = glyphVector.accessBackendGlyphs<Glyph>();
         // Calculate the texture coordinates for the vertexes during first use (fAtlasGeneration
-        // is set to kInvalidAtlasGeneration) or the atlas has changed in subsequent calls.
+        // is set to kInvalidAtlasGeneration) or the atlas has changed in subsequent calls. Always
+        // reset the update, even when begin > 0. When begin > 0, this subrun was split across
+        // flushes and previously used glyphs in [0, begin) have an older token. If those glyphs are
+        // not used in [begin, end], they shouldn't be part of the next bulk update (and because
+        // we won't have updated the whole subrun in one go, we won't set `fAtlasGeneration` to take
+        // the fast path on reuse). If we do reuse the glyphs, we need the bulk update to have been
+        // reset so that the call to addGlyphToBulkAndSetUseToken() sees the first use with the new
+        // token and updates the atlas locator.
         fBulkUseUpdater.reset();
 
         SkBulkGlyphMetricsAndImages metricsAndImages{fTextStrike->strikeSpec()};
@@ -201,12 +216,13 @@ std::tuple<bool, int> GlyphData::regenerateAtlas(int begin,
         bool success = true;
         for (int i = begin; i < end; i++) {
             const Glyph& glyph = glyphSpan[i];
-            SkASSERT(glyph.entry().fGlyphEntryKey.fFormat == maskFormat);
-            if (!atlasManager->hasGlyph(maskFormat, glyph.entry())) {
+            SkASSERT(glyph.entry().fKey.maskFormat() == fResolvedMaskFormat);
+            SkASSERT(glyph.entry().fKey.padding() == fSrcPadding);
+            SkASSERT(glyph.entry().fKey.isSDF() == fIsSDF);
+            if (!atlasManager->hasGlyph(glyph.entry())) {
                 const SkGlyph& skGlyph = *metricsAndImages.glyph(glyph.packedID());
                 auto code = atlasManager->addGlyphToAtlas(skGlyph,
                                                           &glyph.entry(),
-                                                          srcPadding,
                                                           target->resourceProvider(),
                                                           uploadTarget);
                 if (code != GrDrawOpAtlas::ErrorCode::kSucceeded) {
@@ -215,15 +231,18 @@ std::tuple<bool, int> GlyphData::regenerateAtlas(int begin,
                 }
             }
             atlasManager->addGlyphToBulkAndSetUseToken(
-                    &fBulkUseUpdater, maskFormat, glyph.entry(), tokenTracker->nextDrawToken());
+                    &fBulkUseUpdater, glyph.entry(), tokenTracker->nextDrawToken());
             glyphsPlacedInAtlas++;
         }
 
-        // Update atlas generation if there are no more glyphs to put in the atlas.
-        if (success && begin + glyphsPlacedInAtlas == glyphVector.glyphCount()) {
+        // Update atlas generation if there are no more glyphs to put in the atlas. We can only do
+        // this if we successfully checked/added the entire glyph vector in one pass. Otherwise, on
+        // a partial update, some of the previous glyphs of the subrun that were already drawn could
+        // have been evicted to make room for these remaining glyphs.
+        if (success && begin == 0 && glyphsPlacedInAtlas == glyphVector.glyphCount()) {
             // Need to get the freshest value of the atlas' generation because
             // updateTextureCoordinates may have changed it.
-            fAtlasGeneration = atlasManager->atlasGeneration(maskFormat);
+            fAtlasGeneration = atlasManager->atlasGeneration(fResolvedMaskFormat);
         }
 
         return {success, glyphsPlacedInAtlas};
@@ -232,8 +251,9 @@ std::tuple<bool, int> GlyphData::regenerateAtlas(int begin,
         if (end == glyphVector.glyphCount()) {
             // The atlas hasn't changed and the texture coordinates are all still valid. Update
             // all the plots used to the new use token.
-            atlasManager->setUseTokenBulk(
-                    fBulkUseUpdater, uploadTarget->tokenTracker()->nextDrawToken(), maskFormat);
+            atlasManager->setUseTokenBulk(fBulkUseUpdater,
+                                          uploadTarget->tokenTracker()->nextDrawToken(),
+                                          fResolvedMaskFormat);
         }
         return {true, end - begin};
     }

@@ -28,6 +28,7 @@
 #include "src/core/SkTSort.h"
 
 #include <algorithm>
+#include <array>
 #include <cstdint>
 #include <cstring>
 #include <iterator>
@@ -143,7 +144,7 @@ bool SkRgnBuilder::init(int maxHeight, int maxTransitions, bool pathIsInverse) {
         return false;
     }
 
-    SkSafeMath  safe;
+    SkSafeMath safe;
 
     if (pathIsInverse) {
         // allow for additional X transitions to "invert" each scanline
@@ -262,28 +263,28 @@ void SkRgnBuilder::copyToRgn(SkRegion::RunType runs[]) const {
 }
 
 static unsigned verb_to_initial_last_index(SkPathVerb verb) {
-    static const uint8_t gPathVerbToInitialLastIndex[] = {
+    static constexpr auto gPathVerbToInitialLastIndex = std::to_array<uint8_t>({
         0,  //  kMove_Verb
         1,  //  kLine_Verb
         2,  //  kQuad_Verb
         2,  //  kConic_Verb
         3,  //  kCubic_Verb
         0,  //  kClose_Verb
-    };
+    });
     const unsigned index = static_cast<unsigned>(verb);
     SkASSERT(index < std::size(gPathVerbToInitialLastIndex));
     return gPathVerbToInitialLastIndex[index];
 }
 
 static unsigned verb_to_max_edges(SkPathVerb verb) {
-    static const uint8_t gPathVerbToMaxEdges[] = {
+    static constexpr auto gPathVerbToMaxEdges = std::to_array<uint8_t>({
         0,  //  kMove_Verb
         1,  //  kLine_Verb
         2,  //  kQuad_VerbB
         2,  //  kConic_VerbB
         3,  //  kCubic_Verb
         0,  //  kClose_Verb
-    };
+    });
     const unsigned index = static_cast<unsigned>(verb);
     SkASSERT(index < std::size(gPathVerbToMaxEdges));
     return gPathVerbToMaxEdges[index];
@@ -364,12 +365,27 @@ bool SkRegion::setPath(const SkPath& path, const SkRegion& clip) {
     // big, tile the clip bounds and union the pieces back together.
     if (SkScan::PathRequiresTiling(clipBounds)) {
         static constexpr int kTileSize = 32767 >> 1; // Limit so coords can fit into SkFixed (16.16)
+        static constexpr int kTileLimit = 1000;      // Max size is about 500k x 500k
         const SkIRect pathBounds = path.getBounds().roundOut();
 
         this->setEmpty();
 
         SkIRect intersection;
         if (!intersection.intersect(pathBounds, clipBounds)) {
+            return false;
+        }
+
+        SkSafeMath safe;
+        int width = safe.subInt(intersection.fRight, intersection.fLeft);
+        int height = safe.subInt(intersection.fBottom, intersection.fTop);
+
+        int tilesX = safe.divInt(safe.addInt(width, kTileSize - 1), kTileSize);
+        int tilesY = safe.divInt(safe.addInt(height, kTileSize - 1), kTileSize);
+
+        int totalTiles = safe.mulInt(tilesX, tilesY);
+
+        // Limit the total number of tiles to prevent large coordinate spans from timing out.
+        if (!safe || totalTiles > kTileLimit) {
             return false;
         }
 

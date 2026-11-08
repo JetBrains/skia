@@ -24,7 +24,6 @@ namespace skgpu::graphite {
 
 class Caps;
 enum class DstReadStrategy : uint8_t;
-class StorageBufferManager;
 class PaintParamsKeyBuilder;
 class PipelineDataGatherer;
 class Recorder;
@@ -60,7 +59,6 @@ class KeyContext {
 public:
     // Constructor for the pre-compile code path (i.e., no Recorder)
     KeyContext(const Caps*,
-               StorageBufferManager*,
                PaintParamsKeyBuilder*,
                PipelineDataGatherer*,
                ShaderCodeDictionary*,
@@ -70,7 +68,6 @@ public:
     // Constructor for the ExtractPaintData code path (i.e., with a Recorder)
     KeyContext(Recorder*,
                DrawContext*,
-               StorageBufferManager*,
                PaintParamsKeyBuilder*,
                PipelineDataGatherer*,
                const SkM44& local2Dev,
@@ -102,6 +99,7 @@ public:
     // The key generation flags vary in the scope of a SkRuntimeEffect per child based on how the
     // RuntimeEffect's SkSL invokes each child.
     KeyContext forRuntimeEffect(const SkRuntimeEffect* effect, int child) const;
+    KeyContext forMeshSpecChild() const;
 
     KeyContext withExtraFlags(SkEnumBitMask<KeyGenFlags> flags) const {
         return KeyContext(*this, flags);
@@ -115,7 +113,6 @@ public:
     const SkM44& local2Dev() const { return fLocal2Dev; }
     const SkMatrix* localMatrix() const { return fLocalMatrix; }
 
-    StorageBufferManager* storageBufferManager() const { return fStorageBufferManager; }
     PaintParamsKeyBuilder* paintParamsKeyBuilder() const { return fPaintParamsKeyBuilder; }
     PipelineDataGatherer* pipelineDataGatherer() const { return fPipelineDataGatherer; }
     ShaderCodeDictionary* dict() const { return fDictionary; }
@@ -136,7 +133,6 @@ private:
     const Caps* fCaps;
     Recorder* fRecorder;
     DrawContext* fDC;
-    StorageBufferManager* fStorageBufferManager;
     PaintParamsKeyBuilder* fPaintParamsKeyBuilder;
     PipelineDataGatherer* fPipelineDataGatherer;
     ShaderCodeDictionary* fDictionary;

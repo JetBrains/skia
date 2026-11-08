@@ -10,6 +10,7 @@
 #include "include/gpu/graphite/Recording.h"
 #include "include/private/SkAlign.h"
 #include "include/private/SkAssert.h"
+#include "include/private/SkAttributes.h"
 #include "include/private/SkLog.h"
 #include "include/private/SkMath.h"
 #include "include/private/SkTo.h"
@@ -40,50 +41,10 @@ namespace {
 // The limit for all data created by the StaticBufferManager. This data remains alive for
 // the entire SharedContext so we want to keep it small and give a concrete upper bound to
 // clients for our steady-state memory usage.
-// FIXME The current usage is 4732 bytes across static vertex and index buffers, but that includes
+// FIXME The current usage is 6308 bytes across static vertex and index buffers, but that includes
 // multiple copies of tessellation data, and an unoptimized AnalyticRRect mesh. Once those issues
 // are addressed, we can tighten this and decide on the transfer buffer sizing as well.
-[[maybe_unused]] static constexpr uint32_t kMaxStaticDataSize = 6 << 10;
-
-uint32_t validate_count_and_stride(size_t count, size_t stride, size_t headroom,
-                                   uint32_t alignment) {
-    // size_t may just be uint32_t, so this ensures we have enough bits to
-    // compute the required byte product.
-    const uint64_t count64 = SkTo<uint64_t>(count);
-    const uint64_t stride64 = SkTo<uint64_t>(stride);
-    const uint64_t bytes64 = count64*stride64;
-    const uint64_t headroom64 = SkTo<uint64_t>(headroom);
-    const uint64_t bytesWithHeadroom64 = std::max(headroom64, bytes64);
-    if (count64 > std::numeric_limits<uint32_t>::max() ||
-        stride64 > std::numeric_limits<uint32_t>::max() ||
-        bytes64 > std::numeric_limits<uint32_t>::max() ||
-        headroom64 > std::numeric_limits<uint32_t>::max() ||
-        bytesWithHeadroom64 > std::numeric_limits<uint32_t>::max() - (alignment + 1)) {
-        // Return 0 to skip further allocation attempts.
-        return 0;
-    }
-    // Since count64 and stride64 fit into 32-bits, their product won't overflow a 64-bit multiply,
-    // and we've confirmed product fits into 32-bits with head room to be aligned w/o overflow.
-    return SkTo<uint32_t>(bytesWithHeadroom64);
-}
-
-// Calculates the LCM of `alignMaybePow2` and `alignProbNonPow2`. Neither value needs to be a
-// power of 2, but this is optimized to check for whether or not `alignMaybePow2` is a power of 2.
-// It assumes the probability of the 2nd alignment value being a power of 2 is low enough to not
-// be worth checking.
-uint32_t lcm_alignment(uint32_t alignMaybePow2, uint32_t alignProbNonPow2) {
-    SkASSERT(alignMaybePow2 != 0 && alignProbNonPow2 != 0);
-    if (alignMaybePow2 == 1 ||
-        alignMaybePow2 == alignProbNonPow2 ||
-        (SkIsPow2(alignMaybePow2) &&
-                alignProbNonPow2 > alignMaybePow2 &&
-                (alignProbNonPow2 & (alignMaybePow2 - 1)) == 0)) {
-        // Trivial LCM since alignProbNonPow2 is the same or a larger multiple of alignMaybePow2
-        return alignProbNonPow2;
-    } else {
-        return std::lcm(alignMaybePow2, alignProbNonPow2);
-    }
-}
+[[maybe_unused]] static constexpr uint32_t kMaxStaticDataSize = 7 << 10;
 
 // Helpers for creating a BufferState based on type, options, and caps
 
@@ -231,10 +192,10 @@ void BufferSubAllocator::prepForStride(size_t stride, size_t align, size_t minCo
         // `stride` so that repeated suballocations of `stride` can be performed by simply adding to
         // fOffset without additional instructions. If `fStride == 0`, it's a signal that the first
         // offset also needs to be aligned to the minimum binding requirement.
-        uint32_t align32 = lcm_alignment(SkTo<uint32_t>(align), SkTo<uint32_t>(stride));
+        uint32_t align32 = BufferAligner::LcmAlignment(SkTo<uint32_t>(align), SkTo<uint32_t>(stride));
         if (fStride == 0) {
             const uint32_t minAlignment = fOwner->fCurrentBuffers[fStateIndex].fMinAlignment;
-            align32 = lcm_alignment(minAlignment, align32);
+            align32 = BufferAligner::LcmAlignment(minAlignment, align32);
         }
 
         const uint32_t stride32 = SkTo<uint32_t>(stride);
@@ -468,8 +429,8 @@ BufferSubAllocator DrawBufferManager::getBuffer(
     BufferState& state = fCurrentBuffers[stateIndex];
     // The size for a buffer is aligned to the minimum block size for better resource reuse, which
     // is more conservative than fMinAlignment.
-    uint32_t requiredBytes32 = validate_count_and_stride(count, stride, headroom,
-                                                         state.fMinBlockSize);
+    uint32_t requiredBytes32 = BufferAligner::ValidateCountAndStride(count, stride, headroom,
+                                                                     state.fMinBlockSize);
     if (fMappingFailed || !requiredBytes32) {
         return {};
     }
@@ -574,7 +535,7 @@ VertexWriter StaticBufferManager::getVertexWriter(size_t count,
     if (alignedCount > count) {
         const uint32_t byteDiff = (alignedCount - count) * stride;
         void* zPtr = SkTAddOffset<void>(data, count * stride);
-        memset(zPtr, 0, byteDiff);
+        SK_UNSAFE_TODO(memset(zPtr, 0, byteDiff));
     }
     return VertexWriter{data, size};
 }
@@ -597,13 +558,13 @@ void* StaticBufferManager::prepareStaticData(BufferState* state,
     // Unlike in BufferSubAllocator::reserve(), we do use SkTo<uint32_t> to check
     // `requiredAlignment`. This is not dynamic data and is fully controlled by Graphite, so if it
     // asserts, then there is a bug in the static data for a Renderer that must be fixed.
-    const uint32_t align32 = lcm_alignment(state->fMinimumAlignment,
-                                           SkTo<uint32_t>(requiredAlignment));
+    const uint32_t align32 = BufferAligner::LcmAlignment(state->fMinimumAlignment,
+                                                         SkTo<uint32_t>(requiredAlignment));
 
     SkASSERT(target);
     *target = {nullptr, 0};
-    uint32_t size32 = validate_count_and_stride(requiredBytes, /*stride=*/1, /*headroom=*/0,
-                                                align32);
+    uint32_t size32 = BufferAligner::ValidateCountAndStride(requiredBytes, /*stride=*/1,
+                                                            /*headroom=*/0, align32);
     if (!size32 || fMappingFailed) {
         return nullptr;
     }
@@ -669,7 +630,8 @@ bool StaticBufferManager::BufferState::createAndUpdateBindings(
     for (const CopyRange& data : fData) {
         // Each copy range's size should be aligned to the lcm of the required alignment and minimum
         // alignment so we can increment the offset in the static buffer.
-        const uint32_t alignment = lcm_alignment(fMinimumAlignment, data.fRequiredAlignment);
+        const uint32_t alignment = BufferAligner::LcmAlignment(fMinimumAlignment,
+                                                               data.fRequiredAlignment);
         offset = SkAlignNonPow2(offset, alignment);
         SkASSERT(!(offset % fMinimumAlignment) && !(offset % data.fRequiredAlignment));
         uint32_t size = data.fSource.fSize;

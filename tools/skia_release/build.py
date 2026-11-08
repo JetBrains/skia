@@ -113,15 +113,46 @@ def main():
   else:
     args += ['extra_cflags+=["-fvisibility=default"]']
 
-  if is_ios or is_tvos:
+  icu_data_config = {
+      'ios': (
+          '//third_party/externals/icu/filters/ios.json',
+          '//third_party/icu/skiko_ios/filter.patch',
+      ),
+      'iosSim': (
+          '//third_party/externals/icu/filters/ios.json',
+          '//third_party/icu/skiko_ios/filter.patch',
+      ),
+      'tvos': (
+          '//third_party/externals/icu/filters/ios.json',
+          '//third_party/icu/skiko_ios/filter.patch',
+      ),
+      'tvosSim': (
+          '//third_party/externals/icu/filters/ios.json',
+          '//third_party/icu/skiko_ios/filter.patch',
+      ),
+      'macos': (
+          '//third_party/externals/icu/filters/common.json',
+          '//third_party/icu/skiko_desktop/filter.patch',
+      ),
+      'windows': (
+          '//third_party/externals/icu/filters/common.json',
+          '//third_party/icu/skiko_desktop/filter.patch',
+      ),
+      'linux': (
+          '//third_party/externals/icu/filters/common.json',
+          '//third_party/icu/skiko_desktop/filter.patch',
+      ),
+  }.get(target)
+  if icu_data_config:
+    icu_filter, icu_filter_patch = icu_data_config
     args += [
-        'skia_icu_data_filter="//third_party/externals/icu/filters/ios.json"',
-        'skia_icu_data_filter_patch="//third_party/icu/skiko_ios/filter.patch"'
+        f'skia_icu_data_filter="{icu_filter}"',
+        f'skia_icu_data_filter_patch="{icu_filter_patch}"',
     ]
 
   if is_macos or is_ios or is_tvos:
     if is_macos:
-      args += ['skia_use_fonthost_mac=true']
+      args += ['skia_use_fonthost_mac=true', 'skia_use_vulkan=true']
       if enable_graphite_dawn:
         args += ['dawn_enable_metal=true']
     args += ['extra_cflags_cc+=["-frtti"]']
@@ -130,9 +161,7 @@ def main():
       args += ['target_os="ios"']
       if is_ios_sim:
         args += ['ios_use_simulator=true']
-        args += ['extra_cflags+=["-mios-simulator-version-min=12.0"]']
-      else:
-        args += ['ios_min_target="12.0"']
+      args += ['ios_min_target="14.0"']
     elif is_tvos:
       args += ['target_os="tvos"']
       if is_tvos_sim:
@@ -148,8 +177,8 @@ def main():
     args += [
         'skia_use_vulkan=true',
         'skia_use_egl=true',
-        'cc="gcc-10"',
-        'cxx="g++-10"',
+        'cc="gcc-11"',
+        'cxx="g++-11"',
     ]
     if machine == 'arm64':
       args += [
@@ -214,7 +243,7 @@ def main():
         'skia_use_gl=true',
         'skia_enable_svg=true',
         'skia_use_expat=true',
-        'extra_cflags+=["-DSK_SUPPORT_GPU=1", "-DSK_GL", "-DSK_DISABLE_LEGACY_SHADERCONTEXT", "-sSUPPORT_LONGJMP=wasm"]',
+        'extra_cflags+=["-DSK_SUPPORT_GPU=1", "-DSK_GL", "-DSK_DISABLE_LEGACY_SHADERCONTEXT", "-sSUPPORT_LONGJMP=wasm", "-Os"]',
         'extra_cflags_cc+=["-std=c++20"]',
     ]
 

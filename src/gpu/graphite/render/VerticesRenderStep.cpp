@@ -12,6 +12,7 @@
 #include "include/core/SkSpan.h"
 #include "include/core/SkVertices.h"
 #include "include/private/SkAssert.h"
+#include "include/private/SkAttributes.h"
 #include "include/private/SkDebug.h"
 #include "include/private/SkEnumBitMask.h"
 #include "include/private/SkTo.h"
@@ -68,61 +69,46 @@ static constexpr SkSpan<const Varying> kVaryings[2] = {
         /*color*/ kVaryingColor
     };
 
-RenderStep::RenderStepID variant_id(PrimitiveType type, bool hasColor, bool hasTexCoords) {
-    if (type == PrimitiveType::kTriangles) {
-        if (hasColor) {
-            if (hasTexCoords) {
-                return RenderStep::RenderStepID::kVertices_TrisColorTexCoords;
-            } else {
-                return RenderStep::RenderStepID::kVertices_TrisColor;
-            }
+RenderStep::RenderStepID variant_id(bool hasColor, bool hasTexCoords) {
+    if (hasColor) {
+        if (hasTexCoords) {
+            return RenderStep::RenderStepID::kVertices_PosColorTexCoords;
         } else {
-            if (hasTexCoords) {
-                return RenderStep::RenderStepID::kVertices_TrisTexCoords;
-            } else {
-                return RenderStep::RenderStepID::kVertices_Tris;
-            }
+            return RenderStep::RenderStepID::kVertices_PosColor;
         }
     } else {
-        SkASSERT(type == PrimitiveType::kTriangleStrip);
-
-        if (hasColor) {
-            if (hasTexCoords) {
-                return RenderStep::RenderStepID::kVertices_TristripsColorTexCoords;
-            } else {
-                return RenderStep::RenderStepID::kVertices_TristripsColor;
-            }
+        if (hasTexCoords) {
+            return RenderStep::RenderStepID::kVertices_PosTexCoords;
         } else {
-            if (hasTexCoords) {
-                return RenderStep::RenderStepID::kVertices_TristripsTexCoords;
-            } else {
-                return RenderStep::RenderStepID::kVertices_Tristrips;
-            }
+            return RenderStep::RenderStepID::kVertices_Pos;
         }
     }
 }
 
 }  // namespace
 
-VerticesRenderStep::VerticesRenderStep(Layout layout, PrimitiveType type, bool hasColor,
-                                       bool hasTexCoords)
+// NOTE: Mesh geometry can emit triangles that self intersect, but it *wants* those to produce
+// double blending, so we do always add Flags::kAllowSelfIntersection.
+VerticesRenderStep::VerticesRenderStep(Layout layout, bool hasColor, bool hasTexCoords)
         : RenderStep(layout,
-                     variant_id(type, hasColor, hasTexCoords),
+                     variant_id(hasColor, hasTexCoords),
                      (hasColor ? Flags::kEmitsPrimitiveColor : Flags::kNone) |
-                     Flags::kPerformsShading | Flags::kAppendVertices,
+                     Flags::kPerformsShading | Flags::kAppendVertices
+                                             | Flags::kAllowsSelfIntersection,
                      /*uniforms=*/{{"localToDevice", SkSLType::kFloat4x4},
                                    {"depth", SkSLType::kFloat}},
-                     type,
-                     kDirectDepthLEqualPass,
-                     /*staticAttrs=*/ {},
-                     /*appendAttrs=*/kAttributes[2*hasTexCoords + hasColor],
-                     /*varyings=*/   kVaryings[hasColor])
+                     PrimitiveType::kTriangles,
+                     /*stencilSettings=*/{},
+                     /*staticAttrs=*/{},
+                     /*appendAttrs=*/SK_UNSAFE_TODO(kAttributes[2 * hasTexCoords + hasColor]),
+                     /*storageUniforms=*/{},
+                     /*varyings=*/SK_UNSAFE_TODO(kVaryings[hasColor]))
         , fHasColor(hasColor)
         , fHasTexCoords(hasTexCoords) {}
 
 VerticesRenderStep::~VerticesRenderStep() {}
 
-std::string VerticesRenderStep::vertexSkSL() const {
+std::string VerticesRenderStep::vertexSkSL(const RootNodesInfo&) const {
     if (fHasColor && fHasTexCoords) {
         return
             "color = half4(vertColor.bgr * vertColor.a, vertColor.a);\n"
@@ -148,7 +134,7 @@ std::string VerticesRenderStep::vertexSkSL() const {
     }
 }
 
-const char* VerticesRenderStep::fragmentColorSkSL() const {
+std::string VerticesRenderStep::fragmentColorSkSL(const RootNodesInfo&) const {
     if (fHasColor) {
         return "primitiveColor = color;\n";
     } else {
@@ -157,6 +143,7 @@ const char* VerticesRenderStep::fragmentColorSkSL() const {
 }
 
 void VerticesRenderStep::writeVertices(DrawWriter* writer,
+                                       StorageContext* /*storageContext*/,
                                        const DrawParams& params,
                                        uint32_t ssboIndex) const {
     SkVerticesPriv info(params.geometry().vertices()->priv());
@@ -185,24 +172,21 @@ void VerticesRenderStep::writeVertices(DrawWriter* writer,
     VertState state(vertexCount, indices, indexCount);
     VertState::Proc vertProc = state.chooseProc(info.mode());
     while (vertProc(&state)) {
-        verts.append(3) << positions[state.f0]
-                        << VertexWriter::If(fHasColor, colors ? colors[state.f0]
-                                                              : SK_ColorTRANSPARENT)
-                        << VertexWriter::If(fHasTexCoords, texCoords ? texCoords[state.f0]
-                                                                     : SkPoint{0.f, 0.f})
-                        << ssboIndex
-                        << positions[state.f1]
-                        << VertexWriter::If(fHasColor, colors ? colors[state.f1]
-                                                              : SK_ColorTRANSPARENT)
-                        << VertexWriter::If(fHasTexCoords, texCoords ? texCoords[state.f1]
-                                                                     : SkPoint{0.f, 0.f})
-                        << ssboIndex
-                        << positions[state.f2]
-                        << VertexWriter::If(fHasColor, colors ? colors[state.f2]
-                                                              : SK_ColorTRANSPARENT)
-                        << VertexWriter::If(fHasTexCoords, texCoords ? texCoords[state.f2]
-                                                                     : SkPoint{0.f, 0.f})
-                        << ssboIndex;
+        SK_UNSAFE_TODO(
+                verts.append(3)
+                << positions[state.f0]
+                << VertexWriter::If(fHasColor, colors ? colors[state.f0] : SK_ColorTRANSPARENT)
+                << VertexWriter::If(fHasTexCoords,
+                                    texCoords ? texCoords[state.f0] : SkPoint{0.f, 0.f})
+                << ssboIndex << positions[state.f1]
+                << VertexWriter::If(fHasColor, colors ? colors[state.f1] : SK_ColorTRANSPARENT)
+                << VertexWriter::If(fHasTexCoords,
+                                    texCoords ? texCoords[state.f1] : SkPoint{0.f, 0.f})
+                << ssboIndex << positions[state.f2]
+                << VertexWriter::If(fHasColor, colors ? colors[state.f2] : SK_ColorTRANSPARENT)
+                << VertexWriter::If(fHasTexCoords,
+                                    texCoords ? texCoords[state.f2] : SkPoint{0.f, 0.f})
+                << ssboIndex);
     }
 }
 

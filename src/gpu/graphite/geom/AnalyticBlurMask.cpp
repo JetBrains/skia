@@ -24,6 +24,7 @@
 #include "include/gpu/graphite/Recorder.h"
 #include "include/private/SkAlign.h"
 #include "include/private/SkAssert.h"
+#include "include/private/SkAttributes.h"
 #include "include/private/SkFloatingPoint.h"
 #include "include/private/SkMacros.h"
 #include "src/core/SkFloatBits.h"
@@ -75,6 +76,9 @@ std::optional<AnalyticBlurMask> AnalyticBlurMask::Make(Recorder* recorder,
                                                        const SkRRect& srcRRect) {
     // TODO: Implement SkMatrix functionality used below for Transform.
     SkMatrix localToDevice = localToDeviceTransform;
+    if (!localToDevice.isSimilarity()) {
+        return std::nullopt;
+    }
 
     if (srcRRect.isRect() && localToDevice.preservesRightAngles()) {
         return MakeRect(recorder, localToDevice, deviceSigma, srcRRect.rect());
@@ -98,10 +102,12 @@ std::optional<AnalyticBlurMask> AnalyticBlurMask::Make(Recorder* recorder,
         return MakeCircle(recorder, localToDevice, deviceSigma, srcRect, devRect);
     }
 
+#if defined(SK_SUPPORT_LEGACY_GRAPHITE_RRECT_BLUR)
     if (devRRect.has_value() && SkRRectPriv::IsSimpleCircular(*devRRect) &&
         localToDevice.isScaleTranslate()) {
         return MakeRRect(recorder, localToDevice, deviceSigma, srcRRect, *devRRect);
     }
+#endif
 
     return std::nullopt;
 }
@@ -380,7 +386,7 @@ std::optional<AnalyticBlurMask> AnalyticBlurMask::MakeRRect(Recorder* recorder,
         // TODO: We should discretize the sigma to perceptibly meaningful changes to the table,
         // as well as the underlying the round rect geometry.
         UniqueKey::Builder builder(&key, kRRectBlurDomain, kKeySize, "BlurredRRectNinePatch");
-        memcpy(&builder[0], &params, sizeof(DerivedParams));
+        SK_UNSAFE_TODO(memcpy(&builder[0], &params, sizeof(DerivedParams)));
     }
 
     sk_sp<TextureProxy> ninePatch = recorder->priv().proxyCache()->findOrCreateCachedProxy(

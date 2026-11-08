@@ -11,9 +11,10 @@
 #include "tools/flags/CommandLineFlags.h"
 
 
-SKPAnimationBench::SKPAnimationBench(const char* name, const SkPicture* pic, const SkIRect& clip,
+SKPAnimationBench::SKPAnimationBench(const char* name, const SkPicture* pic,
+                                     const SkIRect& clip, const SkISize& tileSize,
                                      sk_sp<Animation> animation, bool doLooping)
-    : INHERITED(name, pic, clip, 1.0, doLooping)
+    : INHERITED(name, pic, clip, 1.0, tileSize, doLooping)
     , fAnimation(std::move(animation)) {
     fUniqueName.printf("%s_%s", name, fAnimation->getTag());
 }
@@ -29,15 +30,27 @@ void SKPAnimationBench::onPerCanvasPreDraw(SkCanvas* canvas) {
 }
 
 void SKPAnimationBench::drawPicture() {
-    for (int j = 0; j < this->tileRects().size(); ++j) {
-        SkMatrix trans = SkMatrix::Translate(-1.f * this->tileRects()[j].fLeft,
-                                             -1.f * this->tileRects()[j].fTop);
+    const skia_private::TArray<TileInfo>& tileInfo = this->tileInfo();
+
+    for (const TileInfo& tile : tileInfo) {
+        SkMatrix trans = SkMatrix::Translate(-1.f * tile.tileRect().fLeft,
+                                             -1.f * tile.tileRect().fTop);
         fAnimation->preConcatFrameMatrix(fAnimationTime.nextRangeF(0, 1000), fDevBounds, &trans);
-        this->surfaces()[j]->getCanvas()->drawPicture(this->picture(), &trans, nullptr);
+
+        SkCanvas* canvas = tile.surface()->getCanvas();
+
+        SkAutoCanvasRestore acr(canvas, /* doSave= */ false);
+        canvas->clear(SK_ColorWHITE);
+
+        canvas->save();
+        canvas->clipRect(tile.clipRect());
+        canvas->setMatrix(tile.mat());
+
+        canvas->drawPicture(tile.picture(), &trans, nullptr);
     }
 
-    for (int j = 0; j < this->tileRects().size(); ++j) {
-        skgpu::Flush(this->surfaces()[j].get());
+    for (const TileInfo& tile : tileInfo) {
+        skgpu::Flush(tile.surface());
     }
 }
 

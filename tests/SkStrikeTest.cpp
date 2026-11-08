@@ -25,6 +25,7 @@
 #include "include/private/SkTArray.h"
 #include "include/private/SkTo.h"
 #include "src/core/SkArenaAlloc.h"
+#include "src/core/SkExecutors.h"
 #include "src/core/SkGlyph.h"
 #include "src/core/SkMask.h"
 #include "src/core/SkReadBuffer.h"
@@ -40,6 +41,7 @@
 #include "tools/ToolUtils.h"
 #include "tools/fonts/FontToolUtils.h"
 
+#include <array>
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
@@ -118,8 +120,8 @@ DEF_TEST(SkStrikeMultiThread, Reporter) {
     font.setSubpixel(true);
     font.setTypeface(typeface);
 
-    SkGlyphID glyphs['z'];
-    SkPoint pos['z'];
+    std::array<SkGlyphID, 'z'> glyphs;
+    std::array<SkPoint, 'z'> pos;
     for (int c = ' '; c < 'z'; c++) {
         glyphs[c] = font.unicharToGlyph(c);
         pos[c] = {30.0f * c + 30, 30.0f};
@@ -135,40 +137,42 @@ DEF_TEST(SkStrikeMultiThread, Reporter) {
     SkStrikeCache strikeCache;
 
     // Make our own executor so the --threads parameter doesn't mess things up.
-    auto executor = SkExecutor::MakeFIFOThreadPool(kThreadCount);
+    auto executor = SkExecutors::MakeFIFOThreadPool(kThreadCount);
     for (int tries = 0; tries < 100; tries++) {
         SkStrike strike{&strikeCache, strikeSpec, strikeSpec.createScalerContext(), nullptr,
                         nullptr};
 
-        auto perThread = [&](int threadIndex) {
-            barrier.waitForAll();
+        SkTaskGroup taskGroup(*executor);
+        for (int threadIndex = 0; threadIndex < kThreadCount; ++threadIndex) {
+            taskGroup.add([&, threadIndex]() {
+                barrier.waitForAll();
 
-            auto local = data.subspan(threadIndex * 2, data.size() - kThreadCount * 2);
-            for (int i = 0; i < 100; i++) {
-                // Accepted buffers.
-                STArray<64, SkPackedGlyphID> acceptedPackedGlyphIDs;
-                STArray<64, SkPoint> acceptedPositions;
-                STArray<64, SkMask::Format> acceptedFormats;
-                acceptedPackedGlyphIDs.resize(glyphCount);
-                acceptedPositions.resize(glyphCount);
-                const auto acceptedBuffer = SkMakeZip(acceptedPackedGlyphIDs, acceptedPositions);
+                auto local = data.subspan(threadIndex * 2, data.size() - kThreadCount * 2);
+                for (int i = 0; i < 100; i++) {
+                    // Accepted buffers.
+                    STArray<64, SkPackedGlyphID> acceptedPackedGlyphIDs;
+                    STArray<64, SkPoint> acceptedPositions;
+                    STArray<64, SkMask::Format> acceptedFormats;
+                    acceptedPackedGlyphIDs.resize(glyphCount);
+                    acceptedPositions.resize(glyphCount);
+                    const auto acceptedBuffer = SkMakeZip(acceptedPackedGlyphIDs, acceptedPositions);
 
-                // Rejected buffers.
-                STArray<64, SkGlyphID> rejectedGlyphIDs;
-                STArray<64, SkPoint> rejectedPositions;
-                rejectedGlyphIDs.resize(glyphCount);
-                rejectedPositions.resize(glyphCount);
-                const auto rejectedBuffer = SkMakeZip(rejectedGlyphIDs, rejectedPositions);
+                    // Rejected buffers.
+                    STArray<64, SkGlyphID> rejectedGlyphIDs;
+                    STArray<64, SkPoint> rejectedPositions;
+                    rejectedGlyphIDs.resize(glyphCount);
+                    rejectedPositions.resize(glyphCount);
+                    const auto rejectedBuffer = SkMakeZip(rejectedGlyphIDs, rejectedPositions);
 
-                SkZip<const SkGlyphID, const SkPoint> source = local;
+                    SkZip<const SkGlyphID, const SkPoint> source = local;
 
-                auto [accepted, rejected, bounds] =
-                prepare_for_mask_drawing(&strike, source, acceptedBuffer, rejectedBuffer);
-                source = rejected;
-            }
-        };
-
-        SkTaskGroup(*executor).batch(kThreadCount, perThread);
+                    auto [accepted, rejected, bounds] =
+                        prepare_for_mask_drawing(&strike, source, acceptedBuffer, rejectedBuffer);
+                    source = rejected;
+                }
+            });
+        }
+        taskGroup.wait();
     }
 }
 

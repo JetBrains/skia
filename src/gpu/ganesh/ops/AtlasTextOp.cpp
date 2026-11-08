@@ -12,6 +12,7 @@
 #include "include/core/SkSurfaceProps.h"
 #include "include/core/SkTypes.h"
 #include "include/private/SkDebug.h"
+#include "include/private/SkMalloc.h"
 #include "include/private/SkTArray.h"
 #include "src/core/SkArenaAlloc.h"
 #include "src/core/SkDistanceFieldGen.h"
@@ -74,7 +75,7 @@ void* AtlasTextOp::operator new(size_t s) {
         return std::exchange(gCache, nullptr);
     }
 
-    return ::operator new(s);
+    return sk_malloc_throw(s);
 }
 
 void AtlasTextOp::operator delete(void* bytes) noexcept {
@@ -82,11 +83,11 @@ void AtlasTextOp::operator delete(void* bytes) noexcept {
         gCache = bytes;
         return;
     }
-    ::operator delete(bytes);
+    sk_free(bytes);
 }
 
 void AtlasTextOp::ClearCache() {
-    ::operator delete(gCache);
+    sk_free(gCache);
     gCache = nullptr;
 }
 
@@ -560,7 +561,11 @@ void AtlasTextOp::onPrepareDraws(GrMeshDrawTarget* target) {
         const sktext::gpu::AtlasSubRun& subRun = geo->fSubRun;
 
         if (!subRun.glyphVector().hasBackendData()) {
-            subRun.glyphVector().initBackendData<GlyphData>(target->strikeCache(), maskFormat);
+            subRun.glyphVector().initBackendData<GlyphData>(target->strikeCache(),
+                                                            atlasManager,
+                                                            maskFormat,
+                                                            subRun.glyphSrcPadding(),
+                                                            this->usesDistanceFields());
         }
 
         auto& glyphData = subRun.glyphVector().accessBackendData<GlyphData>();
@@ -579,8 +584,6 @@ void AtlasTextOp::onPrepareDraws(GrMeshDrawTarget* target) {
             auto [ok, glyphsRegenerated] = glyphData.regenerateAtlas(subRunCursor,
                                                                      regenEnd,
                                                                      subRun.glyphVector(),
-                                                                     maskFormat,
-                                                                     subRun.glyphSrcPadding(),
                                                                      target);
 
             // There was a problem allocating the glyph in the atlas. Bail.

@@ -15,6 +15,7 @@
 #include "include/gpu/graphite/TextureInfo.h"
 #include "include/gpu/graphite/dawn/DawnBackendContext.h"
 #include "include/gpu/graphite/dawn/DawnGraphiteTypes.h"
+#include "include/private/SkAttributes.h"
 #include "src/gpu/SwizzlePriv.h"
 #include "src/gpu/graphite/ComputePipelineDesc.h"
 #include "src/gpu/graphite/GraphicsPipelineDesc.h"
@@ -115,8 +116,12 @@ void DawnCaps::initFormatTable(const wgpu::Device& device) {
             continue;
         }
 
-        // At this point, we can claim at least 1 sample is supported
+        // At this point, we can claim at least single sample and read is supported; all valid
+        // formats in WebGPU support TextureBinding (nearest sampling / texel reads).
+        // See https://gpuweb.github.io/gpuweb/#texture-format-caps
+        supportedUsage |= TextureUsage::kRead;
         supportedSampleCounts = SampleCount::k1;
+
         if (formatCaps & DawnFormatFlag::Filter) {
             supportedUsage |= TextureUsage::kSample;
         }
@@ -172,7 +177,7 @@ std::pair<SkEnumBitMask<TextureUsage>, Tiling> DawnCaps::getTextureUsage(
             }
         }
         if (dawnInfo.fUsage & wgpu::TextureUsage::TextureBinding) {
-            usage |= TextureUsage::kSample;
+            usage |= TextureUsage::kRead | TextureUsage::kSample;
         }
         if (dawnInfo.fUsage & wgpu::TextureUsage::CopySrc) {
             usage |= TextureUsage::kCopySrc;
@@ -200,7 +205,7 @@ TextureInfo DawnCaps::onGetDefaultTextureInfo(SkEnumBitMask<TextureUsage> usage,
 
     wgpu::TextureUsage dawnUsage = wgpu::TextureUsage::None;
 
-    if (usage & TextureUsage::kSample) {
+    if (usage & (TextureUsage::kSample | TextureUsage::kRead)) {
         dawnUsage |= wgpu::TextureUsage::TextureBinding;
     }
     if (usage & TextureUsage::kStorage) {
@@ -256,7 +261,18 @@ SkISize DawnCaps::getDepthAttachmentDimensions(const TextureInfo& textureInfo,
             }
 
             // Otherwise this is the Y or A plane, so no adjustment needed
-            [[fallthrough]];
+            break;
+        case wgpu::TextureFormat::R8BG8Biplanar422Unorm:
+        case wgpu::TextureFormat::R10X6BG10X6Biplanar422Unorm:
+            if (dawnInfo.fAspect == wgpu::TextureAspect::Plane1Only) {
+                return SkISize::Make(colorAttachmentDimensions.width() * 2,
+                                     colorAttachmentDimensions.height());
+            }
+            break;
+        case wgpu::TextureFormat::R8BG8Biplanar444Unorm:
+        case wgpu::TextureFormat::R10X6BG10X6Biplanar444Unorm:
+            // Both planes have the same dimensions as the full texture.
+            break;
         default:
             // Not multiplanar, so no adjustment needed
             break;
@@ -337,7 +353,7 @@ void DawnCaps::initCaps(const DawnBackendContext& backendContext, const ContextO
             DawnGraphicsPipeline::kIntrinsicUniformBufferIndex;
     fResourceBindingReqs.fCombinedUniformBufferBinding =
             DawnGraphicsPipeline::kCombinedUniformIndex;
-    fResourceBindingReqs.fGradientBufferBinding = DawnGraphicsPipeline::kGradientBufferIndex;
+    fResourceBindingReqs.fStorageBufferBinding = DawnGraphicsPipeline::kStorageBufferIndex;
 
 #if !defined(__EMSCRIPTEN__)
     // We need at least 4 SSBOs for intrinsic, render step, paint & gradient buffers.
@@ -385,20 +401,29 @@ void DawnCaps::initCaps(const DawnBackendContext& backendContext, const ContextO
         fSupportedResolveTextureLoadOp = wgpu::LoadOp::ExpandResolveTexture;
         fSupportsPartialLoadResolve =
                 backendContext.fDevice.HasFeature(wgpu::FeatureName::DawnPartialLoadResolveTexture);
-        fDifferentResolveAttachmentSizeSupport = fSupportsPartialLoadResolve;
+        if (fSupportsPartialLoadResolve) {
+            // This extension allows the MSAA attachments to be smaller than the main target.
+            fAttachmentSizePolicy = AttachmentSizePolicy::kMSAARenderArea;
+        }
     }
 
     fSupportsRenderPassRenderArea =
             backendContext.fDevice.HasFeature(wgpu::FeatureName::RenderPassRenderArea);
+
+    if (backendContext.fDevice.HasFeature(wgpu::FeatureName::DawnAllowUndefinedLoadStoreOp)) {
+        fDiscardLoadOp = wgpu::LoadOp::Undefined;
+        fDiscardStoreOp = wgpu::StoreOp::Undefined;
+    }
 #endif
 
     if (!fSupportsPartialLoadResolve &&
         fSupportedTransientAttachmentUsage == wgpu::TextureUsage::None) {
         // If the device doesn't support partial resolve nor transient attachments, we will emulate
         // load/resolve using separate render passes. This helps reuse MSAA textures better to
-        // reduce memory usage.
+        // reduce memory usage. Since they are separate render passes, there is no more requirement
+        // for the auxiliary attachments to match the main target's dimensions.
         fEmulateLoadStoreResolve = true;
-        fDifferentResolveAttachmentSizeSupport = true;
+        fAttachmentSizePolicy = AttachmentSizePolicy::kMSAARenderArea;
 
         // On hardware that doesn't support transient attachments or partial resolve, we
         // force-disable the ExpandResolveTexture loadOp. This is done because, under emulation,
@@ -557,9 +582,10 @@ bool DawnCaps::extractGraphicsDescs(const UniqueKey& key,
     SkASSERT(RenderStep::IsValidRenderStepID(rawKeyData[0]));
     RenderStep::RenderStepID renderStepID = static_cast<RenderStep::RenderStepID>(rawKeyData[0]);
 
-    *pipelineDesc = GraphicsPipelineDesc(renderStepID, UniquePaintParamsID(rawKeyData[1]));
+    *pipelineDesc =
+            GraphicsPipelineDesc(renderStepID, UniquePaintParamsID(SK_UNSAFE_TODO(rawKeyData[1])));
 
-    const uint32_t rpDescBits = rawKeyData[2];
+    const uint32_t rpDescBits = SK_UNSAFE_TODO(rawKeyData[2]);
     TextureFormat colorFormat =
             static_cast<TextureFormat>((rpDescBits >> kColorFormatOffset) & kFormatMask);
     SampleCount colorSamples =
@@ -603,7 +629,7 @@ bool DawnCaps::extractGraphicsDescs(const UniqueKey& key,
     }
 
     renderPassDesc->fSampleCount = colorSamples;
-    renderPassDesc->fWriteSwizzle = SwizzleCtorAccessor::Make(rawKeyData[3]);
+    renderPassDesc->fWriteSwizzle = SK_UNSAFE_TODO(SwizzleCtorAccessor::Make(rawKeyData[3]));
     renderPassDesc->fDstReadStrategy = this->getDstReadStrategy();
 
     return true;

@@ -27,6 +27,7 @@
 #include "src/gpu/ganesh/GrTextureProxy.h"
 
 #include <algorithm>
+#include <array>
 #include <functional>
 #include <memory>
 #include <tuple>
@@ -141,7 +142,7 @@ inline void GrDrawOpAtlas::processEviction(GrPlotLocator plotLocator) {
     fAtlasGeneration = fGenerationCounter->next();
 }
 
-void GrDrawOpAtlas::uploadPlotToTexture(GrDeferredTextureUploadWritePixelsFn& writePixels,
+bool GrDrawOpAtlas::uploadPlotToTexture(GrDeferredTextureUploadWritePixelsFn& writePixels,
                                         GrTextureProxy* proxy,
                                         GrPlot* plot) {
     SkASSERT(proxy && proxy->peekTexture());
@@ -150,12 +151,24 @@ void GrDrawOpAtlas::uploadPlotToTexture(GrDeferredTextureUploadWritePixelsFn& wr
     const void* dataPtr;
     SkIRect rect;
     std::tie(dataPtr, rect) = plot->prepareForUpload();
+    if (!dataPtr || rect.isEmpty()) {
+        // Nothing to upload (e.g. the plot was reset after this upload was
+        // scheduled). This is not a failure.
+        plot->clearDirty();
+        return true;
+    }
 
-    writePixels(proxy,
-                rect,
-                SkColorTypeToGrColorType(fColorType),
-                dataPtr,
-                fBytesPerPixel*fPlotWidth);
+    if (!writePixels(proxy,
+                     rect,
+                     SkColorTypeToGrColorType(fColorType),
+                     dataPtr,
+                     fBytesPerPixel*fPlotWidth)) {
+        this->processEvictionAndResetRects(plot);
+        return false;
+    } else {
+        plot->clearDirty();
+        return true;
+    }
 }
 
 inline bool GrDrawOpAtlas::updatePlot(GrDeferredUploadTarget* target,
@@ -179,7 +192,7 @@ inline bool GrDrawOpAtlas::updatePlot(GrDeferredUploadTarget* target,
 
         skgpu::Token lastUploadToken = target->addASAPUpload(
                 [this, plotsp, proxy](GrDeferredTextureUploadWritePixelsFn& writePixels) {
-                    this->uploadPlotToTexture(writePixels, proxy, plotsp.get());
+                    return this->uploadPlotToTexture(writePixels, proxy, plotsp.get());
                 });
         plot->setLastUploadToken(lastUploadToken);
     }
@@ -320,7 +333,7 @@ GrDrawOpAtlas::ErrorCode GrDrawOpAtlas::addToAtlas(GrResourceProvider* resourceP
 
     skgpu::Token lastUploadToken = target->addInlineUpload(
             [this, plotsp, proxy](GrDeferredTextureUploadWritePixelsFn& writePixels) {
-                this->uploadPlotToTexture(writePixels, proxy, plotsp.get());
+                return this->uploadPlotToTexture(writePixels, proxy, plotsp.get());
             });
     newPlot->setLastUploadToken(lastUploadToken);
 
@@ -576,14 +589,14 @@ inline void GrDrawOpAtlas::deactivateLastPage() {
 }
 
 GrDrawOpAtlasConfig::GrDrawOpAtlasConfig(int maxTextureSize, size_t maxBytes) {
-    static const SkISize kARGBDimensions[] = {
-        {256, 256},   // maxBytes < 2^19
-        {512, 256},   // 2^19 <= maxBytes < 2^20
-        {512, 512},   // 2^20 <= maxBytes < 2^21
-        {1024, 512},  // 2^21 <= maxBytes < 2^22
-        {1024, 1024}, // 2^22 <= maxBytes < 2^23
-        {2048, 1024}, // 2^23 <= maxBytes
-    };
+    static constexpr auto kARGBDimensions = std::to_array<SkISize>({
+        SkISize{256, 256},   // maxBytes < 2^19
+        SkISize{512, 256},   // 2^19 <= maxBytes < 2^20
+        SkISize{512, 512},   // 2^20 <= maxBytes < 2^21
+        SkISize{1024, 512},  // 2^21 <= maxBytes < 2^22
+        SkISize{1024, 1024}, // 2^22 <= maxBytes < 2^23
+        SkISize{2048, 1024}, // 2^23 <= maxBytes
+    });
 
     // Index 0 corresponds to maxBytes of 2^18, so start by dividing it by that
     maxBytes >>= 18;
