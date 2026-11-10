@@ -50,8 +50,7 @@ bool ParagraphStyle::equals(const ParagraphStyle& rhs) const {
 
 bool ParagraphStyle::equalsByLayout(const ParagraphStyle& rhs) const {
     return this->almostEquals(rhs) &&
-           this->fDefaultTextStyle.equalsByFonts(rhs.fDefaultTextStyle) &&
-           nearlyEqual(fHeight, rhs.fHeight);
+           this->fDefaultTextStyle.equalsByFonts(rhs.fDefaultTextStyle);
 }
 
 ParagraphStyle::ParagraphStyle() {
