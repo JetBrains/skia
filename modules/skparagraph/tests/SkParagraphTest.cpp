@@ -2176,12 +2176,13 @@ DEF_TEST(SkParagraph_TextStyleFontMetricsMatchRun, reporter) {
     fontCollection->getParagraphCache()->turnOn(false);
 
     for (bool heightOverride : {false, true}) {
-        for (bool halfLeading : {false, true}) {
+        for (SkScalar topRatio : {-1.0f, 0.2f, 0.5f, 0.8f}) {
             TextStyle textStyle;
             textStyle.setFontSize(50.0f);
             textStyle.setHeightOverride(heightOverride);
             textStyle.setHeight(2.0f);
-            textStyle.setHalfLeading(halfLeading);
+            textStyle.setTopRatio(topRatio);
+            textStyle.setBaselineShift(7.0f);
 
             ParagraphStyle paragraphStyle;
             ParagraphBuilderImpl builder(paragraphStyle, fontCollection, get_unicode());
@@ -2202,12 +2203,12 @@ DEF_TEST(SkParagraph_TextStyleFontMetricsMatchRun, reporter) {
             textStyle.getFontMetrics(&metrics);
             REPORTER_ASSERT(reporter,
                             SkScalarNearlyEqual(metrics.fAscent, run.correctAscent(), EPSILON100),
-                            "heightOverride=%d halfLeading=%d ascent %g != %g",
-                            heightOverride, halfLeading, metrics.fAscent, run.correctAscent());
+                            "heightOverride=%d topRatio=%g ascent %g != %g",
+                            heightOverride, topRatio, metrics.fAscent, run.correctAscent());
             REPORTER_ASSERT(reporter,
                             SkScalarNearlyEqual(metrics.fDescent, run.correctDescent(), EPSILON100),
-                            "heightOverride=%d halfLeading=%d descent %g != %g",
-                            heightOverride, halfLeading, metrics.fDescent, run.correctDescent());
+                            "heightOverride=%d topRatio=%g descent %g != %g",
+                            heightOverride, topRatio, metrics.fDescent, run.correctDescent());
         }
     }
 }
@@ -6288,6 +6289,30 @@ DEF_TEST(SkParagraph_EqualsByFontsUsesEffectiveHeight, reporter) {
     REPORTER_ASSERT(reporter, ignored.equalsByFonts(otherIgnored));
 }
 
+// Skiko's top ratio and explicit zero-height override are shaping inputs too.
+DEF_TEST(SkParagraph_SkikoStyleShapingInputs, reporter) {
+    TextStyle first;
+    first.setHeightOverride(true);
+    first.setHeight(2.0f);
+    first.setTopRatio(0.2f);
+    TextStyle second = first;
+    second.setTopRatio(0.8f);
+    REPORTER_ASSERT(reporter, !first.equalsByFonts(second));
+    REPORTER_ASSERT(reporter, !first.matchOneAttribute(kFont, second));
+
+    first.setHeight(0.0f);
+    second = first;
+    second.setHeightOverride(false);
+    REPORTER_ASSERT(reporter, !first.equalsByFonts(second));
+    REPORTER_ASSERT(reporter, !first.matchOneAttribute(kFont, second));
+
+    ParagraphStyle paragraph;
+    ParagraphStyle customHyphen = paragraph;
+    customHyphen.setSoftHyphenString(SkString("--"));
+    REPORTER_ASSERT(reporter, !(paragraph == customHyphen));
+    REPORTER_ASSERT(reporter, !paragraph.equalsByLayout(customHyphen));
+}
+
 namespace {
 struct CacheProbe {
     std::function<void(ParagraphStyle&, TextStyle& text, TextStyle& placeholder)> fMutate;
@@ -6363,6 +6388,10 @@ DEF_TEST(SkParagraph_CacheKeyCoversShapingInputs, reporter) {
     const CacheProbe probes[] = {
         {[](ParagraphStyle&, TextStyle& t, TextStyle&) { t.setHalfLeading(true); },
          "halfLeading"},
+        {[](ParagraphStyle&, TextStyle& t, TextStyle&) { t.setTopRatio(0.2f); },
+         "topRatio"},
+        {[](ParagraphStyle&, TextStyle&, TextStyle& p) { p.setTopRatio(0.8f); },
+         "placeholderTopRatio"},
         {[](ParagraphStyle&, TextStyle& t, TextStyle&) { t.setHeightOverride(false); },
          "heightOverride"},
         {[](ParagraphStyle&, TextStyle& t, TextStyle&) {
@@ -10797,6 +10826,35 @@ UNIX_ONLY_TEST(SkParagraph_SoftHyphenBreakReservesHyphenWidth, reporter) {
     auto paragraph = layoutWithSoftHyphens(fontCollection, "xy abcd~efgh", width);
     checkLines(reporter, paragraph.get(), "xy|abcd-|efgh");
     REPORTER_ASSERT(reporter, paragraph->getLongestLine() <= width);
+}
+
+// Indentation reduces the width available to both text and the rendered hyphen.
+UNIX_ONLY_TEST(SkParagraph_SoftHyphenBreakRespectsTextIndent, reporter) {
+    sk_sp<ResourceFontCollection> fontCollection = sk_make_sp<ResourceFontCollection>(true);
+    SKIP_IF_FONTS_NOT_FOUND(reporter, fontCollection)
+
+    const SkScalar hyphen = singleLineWidth(fontCollection, "-");
+    const SkScalar available = singleLineWidth(fontCollection, "xy abcd") + hyphen / 2;
+    const SkScalar indentWidth = 30.0f;
+    for (bool firstLine : {false, true}) {
+        auto paragraph = layoutWithSoftHyphens(
+                fontCollection, firstLine ? "xy abcd~efgh" : "start\nxy abcd~efgh",
+                available + indentWidth, [=](ParagraphStyle& style) {
+                    TextIndent indent;
+                    indent.setFirstLine(firstLine ? indentWidth : 0);
+                    indent.setRestLine(indentWidth);
+                    style.setTextIndent(indent);
+                });
+        if (firstLine) {
+            checkLines(reporter, paragraph.get(), "xy|abcd-|efgh");
+        } else {
+            const SkString lines = describeLines(paragraph.get());
+            REPORTER_ASSERT(reporter, lines.endsWith("|xy|abcd-|efgh"),
+                            "lines: %s", lines.c_str());
+            REPORTER_ASSERT(reporter,
+                            static_cast<ParagraphImpl*>(paragraph.get())->lines().size() == 4);
+        }
+    }
 }
 
 // Likewise, an earlier soft hyphen is used when the later one doesn't fit with its hyphen.
