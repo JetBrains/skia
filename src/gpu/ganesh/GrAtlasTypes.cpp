@@ -10,8 +10,8 @@
 #include "include/core/SkAlphaType.h"
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkPixmap.h"
+#include "include/core/SkSwizzle.h"
 #include "include/private/SkMalloc.h"
-#include "src/core/SkSwizzlePriv.h"
 
 GrPlot::GrPlot(int pageIndex,
                int plotIndex,
@@ -99,7 +99,7 @@ bool GrPlot::addSubImage(int width, int height, const void* image, GrAtlasLocato
     constexpr bool kBGRAIsNative = kN32_SkColorType == kBGRA_8888_SkColorType;
     if (4 == fBytesPerPixel && kBGRAIsNative) {
         for (int i = 0; i < height; ++i) {
-            SkOpts::RGBA_to_BGRA((uint32_t*)dataPtr, (const uint32_t*)imagePtr, width);
+            SkSwapRB((uint32_t*)dataPtr, (const uint32_t*)imagePtr, width);
             dataPtr += plotRB;
             imagePtr += imageRB;
         }
