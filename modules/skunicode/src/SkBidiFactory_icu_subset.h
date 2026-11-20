@@ -35,6 +35,7 @@ public:
     void bidi_reorderVisual(const SkUnicode::BidiLevel runLevels[],
                             int levelsCount,
                             int32_t logicalFromVisual[]) const override;
+    SkUnicode::CharDirection charDirection(SkUnichar unichar) const override;
 };
 
 #endif

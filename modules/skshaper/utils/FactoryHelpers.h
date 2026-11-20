@@ -34,6 +34,10 @@
 #include "modules/skunicode/include/SkUnicode_icu4x.h"
 #endif
 
+#if defined(SK_UNICODE_APPLE_IMPLEMENTATION)
+#include "modules/skunicode/include/SkUnicode_apple.h"
+#endif
+
 namespace SkShapers {
 #if defined(SK_SHAPER_UNICODE_AVAILABLE)
 static inline sk_sp<SkUnicode> BestAvailableUnicode() {
@@ -49,6 +53,11 @@ static inline sk_sp<SkUnicode> BestAvailableUnicode() {
 #if defined(SK_UNICODE_LIBGRAPHEME_IMPLEMENTATION)
     if (!uc) {
         uc = SkUnicodes::Libgrapheme::Make();
+    }
+#endif
+#if defined(SK_UNICODE_APPLE_IMPLEMENTATION)
+    if (!uc) {
+        uc = SkUnicodes::Apple::Make();
     }
 #endif
     return uc;

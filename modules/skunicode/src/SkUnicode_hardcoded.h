@@ -27,6 +27,9 @@ public:
     bool isEmojiModifier(SkUnichar utf8) override;
     bool isRegionalIndicator(SkUnichar utf8) override;
     bool isIdeographic(SkUnichar utf8) override;
+    bool isEmojiPresentation(SkUnichar utf8) override;
+    bool isExtendedPictographic(SkUnichar utf8) override;
+    bool isPunctuation(SkUnichar utf8) override;
 };
 
 #endif // SkUnicode_hardcoded_DEFINED

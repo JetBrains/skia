@@ -234,6 +234,10 @@ public:
         SkASSERT(runLevels != nullptr);
         fBidiFact->bidi_reorderVisual(runLevels, levelsCount, logicalFromVisual);
     }
+
+    CharDirection charDirection(SkUnichar unichar) override {
+        return fBidiFact->charDirection(unichar);
+    }
 private:
     friend class SkBreakIterator_libgrapheme;
 
@@ -253,6 +257,45 @@ public:
       { return fLineBreaks[fLineBreakIndex].pos; }
     Position next() override
       { return fLineBreaks[++fLineBreakIndex].pos; }
+    // fLineBreaks ends with a kDone sentinel; real breaks are [0, lastIndex()]
+    Position last() override
+      { return fLineBreaks[(fLineBreakIndex = this->lastIndex())].pos; }
+    Position previous() override {
+        Position index = std::min(fLineBreakIndex, this->lastIndex());
+        if (index == 0) {
+            fLineBreakIndex = 0;
+            return SkBreakIterator::kDone;
+        }
+        return fLineBreaks[(fLineBreakIndex = index - 1)].pos;
+    }
+    Position preceding(Position offset) override {
+        for (Position i = this->lastIndex(); i > 0; --i) {
+            if (SkTo<Position>(fLineBreaks[i - 1].pos) < offset) {
+                return fLineBreaks[(fLineBreakIndex = i - 1)].pos;
+            }
+        }
+        fLineBreakIndex = 0;
+        return SkBreakIterator::kDone;
+    }
+    Position following(Position offset) override {
+        for (Position i = 0; i <= this->lastIndex(); ++i) {
+            if (SkTo<Position>(fLineBreaks[i].pos) > offset) {
+                return fLineBreaks[(fLineBreakIndex = i)].pos;
+            }
+        }
+        fLineBreakIndex = this->lastIndex();
+        return SkBreakIterator::kDone;
+    }
+    bool isBoundary(Position offset) override {
+        for (Position i = 0; i <= this->lastIndex(); ++i) {
+            if (SkTo<Position>(fLineBreaks[i].pos) >= offset) {
+                fLineBreakIndex = i;
+                return SkTo<Position>(fLineBreaks[i].pos) == offset;
+            }
+        }
+        fLineBreakIndex = this->lastIndex();
+        return false;
+    }
     Status status() override {
         return fLineBreaks[fLineBreakIndex].breakType ==
                        SkUnicode::LineBreakType::kHardLineBreak
@@ -281,6 +324,8 @@ public:
         SkASSERT(false);
         return false;
     }
+private:
+    Position lastIndex() const { return SkTo<Position>(fLineBreaks.size()) - 2; }
 };
 
 std::unique_ptr<SkBidiIterator> SkUnicode_libgrapheme::makeBidiIterator(const uint16_t text[], int count,
