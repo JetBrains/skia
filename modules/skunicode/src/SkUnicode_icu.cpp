@@ -476,6 +476,16 @@ class SkUnicode_icu : public SkUnicode {
         return sk_u_hasBinaryProperty(unichar, UCHAR_IDEOGRAPHIC);
     }
 
+    bool isEmojiPresentation(SkUnichar unichar) override {
+        return sk_u_hasBinaryProperty(unichar, UCHAR_EMOJI_PRESENTATION);
+    }
+
+    bool isExtendedPictographic(SkUnichar unichar) override {
+        return sk_u_hasBinaryProperty(unichar, UCHAR_EXTENDED_PICTOGRAPHIC);
+    }
+
+    bool isPunctuation(SkUnichar unichar) override { return sk_u_ispunct(unichar); }
+
     bool isTabulation(SkUnichar utf8) override {
         return utf8 == '\t';
     }
@@ -700,6 +710,10 @@ public:
         }
         SkASSERT(runLevels != nullptr);
         fBidiFact->bidi_reorderVisual(runLevels, levelsCount, logicalFromVisual);
+    }
+
+    CharDirection charDirection(SkUnichar unichar) override {
+        return fBidiFact->charDirection(unichar);
     }
 
 private:

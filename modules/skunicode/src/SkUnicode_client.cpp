@@ -209,6 +209,10 @@ public:
         SkASSERT(runLevels != nullptr);
         fBidiFact->bidi_reorderVisual(runLevels, levelsCount, logicalFromVisual);
     }
+
+    CharDirection charDirection(SkUnichar unichar) override {
+        return fBidiFact->charDirection(unichar);
+    }
 private:
     friend class SkBreakIterator_client;
 

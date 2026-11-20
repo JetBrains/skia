@@ -7,6 +7,7 @@
 #include "include/private/SkAssert.h"
 #include "modules/skunicode/src/SkBidiFactory_icu_subset.h"
 
+#include <unicode/uchar.h>
 #include <unicode/umachine.h>
 
 const char* SkBidiSubsetFactory::errorName(UErrorCode status) const {
@@ -53,4 +54,15 @@ void SkBidiSubsetFactory::bidi_reorderVisual(const SkUnicode::BidiLevel runLevel
     }
     SkASSERT(runLevels != nullptr);
     ubidi_reorderVisual(runLevels, levelsCount, logicalFromVisual);
+}
+
+// SkUnicode::CharDirection reuses ICU's UCharDirection numbering
+static_assert(static_cast<int>(SkUnicode::CharDirection::kLeftToRight) == U_LEFT_TO_RIGHT);
+static_assert(static_cast<int>(SkUnicode::CharDirection::kRightToLeftArabic) == U_RIGHT_TO_LEFT_ARABIC);
+static_assert(static_cast<int>(SkUnicode::CharDirection::kBoundaryNeutral) == U_BOUNDARY_NEUTRAL);
+static_assert(static_cast<int>(SkUnicode::CharDirection::kPopDirectionalIsolate) ==
+              U_POP_DIRECTIONAL_ISOLATE);
+
+SkUnicode::CharDirection SkBidiSubsetFactory::charDirection(SkUnichar unichar) const {
+    return static_cast<SkUnicode::CharDirection>(u_charDirection(unichar));
 }

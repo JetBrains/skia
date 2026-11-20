@@ -211,6 +211,14 @@ public:
         return fUnicode->isEmojiModifierBase(utf8);
     }
     bool isEmojiModifier(SkUnichar utf8) override { return fUnicode->isEmojiModifier(utf8); }
+    bool isEmojiPresentation(SkUnichar utf8) override {
+        return fUnicode->isEmojiPresentation(utf8);
+    }
+    bool isExtendedPictographic(SkUnichar utf8) override {
+        return fUnicode->isExtendedPictographic(utf8);
+    }
+    bool isPunctuation(SkUnichar utf8) override { return fUnicode->isPunctuation(utf8); }
+    CharDirection charDirection(SkUnichar utf8) override { return fUnicode->charDirection(utf8); }
     bool isRegionalIndicator(SkUnichar utf8) override {
         return fUnicode->isRegionalIndicator(utf8);
     }

@@ -154,6 +154,40 @@ class SKUNICODE_API SkUnicode : public SkRefCnt {
         virtual bool isEmojiModifier(SkUnichar utf8) = 0;
         virtual bool isRegionalIndicator(SkUnichar utf8) = 0;
         virtual bool isIdeographic(SkUnichar utf8) = 0;
+        // Unicode Emoji_Presentation property
+        virtual bool isEmojiPresentation(SkUnichar utf8) = 0;
+        // Unicode Extended_Pictographic property
+        virtual bool isExtendedPictographic(SkUnichar utf8) = 0;
+        // General_Category P* (punctuation), like ICU u_ispunct
+        virtual bool isPunctuation(SkUnichar utf8) = 0;
+
+        // Unicode Bidi_Class, numbered like ICU's UCharDirection
+        enum class CharDirection : int32_t {
+            kLeftToRight = 0,
+            kRightToLeft = 1,
+            kEuropeanNumber = 2,
+            kEuropeanNumberSeparator = 3,
+            kEuropeanNumberTerminator = 4,
+            kArabicNumber = 5,
+            kCommonNumberSeparator = 6,
+            kBlockSeparator = 7,
+            kSegmentSeparator = 8,
+            kWhiteSpaceNeutral = 9,
+            kOtherNeutral = 10,
+            kLeftToRightEmbedding = 11,
+            kLeftToRightOverride = 12,
+            kRightToLeftArabic = 13,
+            kRightToLeftEmbedding = 14,
+            kRightToLeftOverride = 15,
+            kPopDirectionalFormat = 16,
+            kDirNonSpacingMark = 17,
+            kBoundaryNeutral = 18,
+            kFirstStrongIsolate = 19,
+            kLeftToRightIsolate = 20,
+            kRightToLeftIsolate = 21,
+            kPopDirectionalIsolate = 22,
+        };
+        virtual CharDirection charDirection(SkUnichar utf8) = 0;
 
         // Methods used in SkShaper and SkText
         virtual std::unique_ptr<SkBidiIterator> makeBidiIterator

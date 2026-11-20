@@ -890,3 +890,32 @@ DEF_TEST(SkUnicode_BreakIterator_NavigationApple, reporter) {
     SkUnicode_BreakIterator_Navigation(reporter, SkUnicodes::Apple::Make());
 }
 #endif
+
+// Properties used by skiko's org.jetbrains.skia.icu API and FontRunIterator; values match ICU
+DEF_TEST_UNICODES(SkUnicode_CharPropertiesForSkiko, reporter) {
+    using Dir = SkUnicode::CharDirection;
+    REPORTER_ASSERT(reporter, unicode->charDirection('A') == Dir::kLeftToRight);
+    REPORTER_ASSERT(reporter, unicode->charDirection(0x05D0) == Dir::kRightToLeft);        // א
+    REPORTER_ASSERT(reporter, unicode->charDirection(0x0627) == Dir::kRightToLeftArabic);  // ا
+    REPORTER_ASSERT(reporter, unicode->charDirection('1') == Dir::kEuropeanNumber);
+    REPORTER_ASSERT(reporter, unicode->charDirection(' ') == Dir::kWhiteSpaceNeutral);
+    REPORTER_ASSERT(reporter, unicode->charDirection('!') == Dir::kOtherNeutral);
+    REPORTER_ASSERT(reporter, unicode->charDirection(0x200B) == Dir::kBoundaryNeutral);
+    REPORTER_ASSERT(reporter, unicode->charDirection(0x2069) == Dir::kPopDirectionalIsolate);
+
+    REPORTER_ASSERT(reporter, unicode->isPunctuation('!'));
+    REPORTER_ASSERT(reporter, unicode->isPunctuation('_'));
+    REPORTER_ASSERT(reporter, unicode->isPunctuation(0xFF0C));   // ，
+    REPORTER_ASSERT(reporter, unicode->isPunctuation(0x00AB));   // «
+    REPORTER_ASSERT(reporter, !unicode->isPunctuation('A'));
+    REPORTER_ASSERT(reporter, !unicode->isPunctuation('+'));     // Sm, not P*
+    REPORTER_ASSERT(reporter, !unicode->isPunctuation(' '));
+
+    REPORTER_ASSERT(reporter, unicode->isEmojiPresentation(0x1F600));      // 😀
+    REPORTER_ASSERT(reporter, !unicode->isEmojiPresentation(0x00A9));      // ©
+    REPORTER_ASSERT(reporter, !unicode->isEmojiPresentation('#'));
+    REPORTER_ASSERT(reporter, unicode->isExtendedPictographic(0x1F600));
+    REPORTER_ASSERT(reporter, unicode->isExtendedPictographic(0x00A9));
+    REPORTER_ASSERT(reporter, !unicode->isExtendedPictographic('#'));
+    REPORTER_ASSERT(reporter, !unicode->isExtendedPictographic('A'));
+}

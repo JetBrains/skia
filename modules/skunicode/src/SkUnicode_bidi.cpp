@@ -140,6 +140,10 @@ public:
         fBidiFact->bidi_reorderVisual(runLevels, levelsCount, logicalFromVisual);
     }
 
+    CharDirection charDirection(SkUnichar unichar) override {
+        return fBidiFact->charDirection(unichar);
+    }
+
 private:
     sk_sp<SkBidiFactory> fBidiFact = sk_make_sp<SkBidiSubsetFactory>();
 };

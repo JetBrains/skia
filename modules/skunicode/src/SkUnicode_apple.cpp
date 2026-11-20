@@ -438,6 +438,16 @@ public:
         fBidiFact->bidi_reorderVisual(runLevels, levelsCount, logicalFromVisual);
     }
 
+    CharDirection charDirection(SkUnichar unichar) override {
+        return fBidiFact->charDirection(unichar);
+    }
+
+    bool isPunctuation(SkUnichar unichar) override {
+        static CFCharacterSetRef punctuation =
+                CFCharacterSetGetPredefined(kCFCharacterSetPunctuation);
+        return CFCharacterSetIsLongCharacterMember(punctuation, unichar);
+    }
+
     bool getBidiRegions(const char utf8[],
                         int utf8Units,
                         TextDirection dir,
