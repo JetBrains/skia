@@ -70,6 +70,81 @@ public:
         return fCurrent = std::min(pos_a, pos_b);
     }
 
+    Position last() override {
+        fCurrent = fA->last();
+        SkAssertResult(fB->last() == fCurrent);
+        fDone = false;
+        return fCurrent;
+    }
+
+    Position previous() override {
+        Position pos_a = fCurrent,
+                 pos_b = fCurrent;
+        bool done = false;
+
+        while (!done) {
+            if (pos_a > pos_b) {
+                pos_a = fA->previous();
+                done = pos_a < 0;
+            } else {
+                pos_b = fB->previous();
+                done = pos_b < 0;
+            }
+
+            if (pos_a == pos_b) {
+                break;
+            }
+        }
+
+        if (done) {
+            // Like ICU, keep the current position when there is no previous boundary
+            fA->isBoundary(fCurrent);
+            fB->isBoundary(fCurrent);
+            return kDone;
+        }
+        fDone = false;
+        return fCurrent = pos_a;
+    }
+
+    Position preceding(Position offset) override {
+        // Move to the intersection boundary >= offset (or the last one when offset is past the
+        // end), then step back once
+        this->isBoundary(offset);
+        return this->previous();
+    }
+
+    Position following(Position offset) override {
+        Position pos_a = fA->following(offset),
+                 pos_b = fB->following(offset);
+        fDone = pos_a < 0 || pos_b < 0;
+
+        while (!fDone && pos_a != pos_b) {
+            if (pos_a < pos_b) {
+                pos_a = fA->next();
+                fDone = pos_a < 0;
+            } else {
+                pos_b = fB->next();
+                fDone = pos_b < 0;
+            }
+        }
+
+        if (fDone) {
+            fCurrent = fA->last();
+            fB->last();
+            return kDone;
+        }
+        return fCurrent = pos_a;
+    }
+
+    bool isBoundary(Position offset) override {
+        if (offset <= 0) {
+            this->first();
+            return offset == 0;
+        }
+        Position pos = this->following(offset - 1);
+        return pos == offset;
+    }
+
     bool setText(const char utftext8[], int utf8Units) override {
         fDone = false;
         fCurrent = 0;

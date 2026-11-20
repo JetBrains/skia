@@ -156,6 +156,51 @@ public:
     }
     bool isDone() override { return fIndex >= SkTo<Position>(fBreaks.size()); }
 
+    Position last() override {
+        if (fBreaks.empty()) {
+            return kDone;
+        }
+        return fBreaks[(fIndex = this->lastIndex())];
+    }
+
+    Position previous() override {
+        Position index = std::min(fIndex, this->lastIndex());
+        if (index <= 0) {
+            fIndex = 0;
+            return kDone;
+        }
+        return fBreaks[(fIndex = index - 1)];
+    }
+
+    Position preceding(Position offset) override {
+        // The break before the first break >= offset is the last break < offset
+        auto it = std::lower_bound(fBreaks.begin(), fBreaks.end(), offset);
+        if (it == fBreaks.begin()) {
+            fIndex = 0;
+            return kDone;
+        }
+        return fBreaks[(fIndex = SkTo<Position>(std::distance(fBreaks.begin(), it)) - 1)];
+    }
+
+    Position following(Position offset) override {
+        auto it = std::upper_bound(fBreaks.begin(), fBreaks.end(), offset);
+        if (it == fBreaks.end()) {
+            fIndex = std::max(this->lastIndex(), 0);
+            return kDone;
+        }
+        return fBreaks[(fIndex = SkTo<Position>(std::distance(fBreaks.begin(), it)))];
+    }
+
+    bool isBoundary(Position offset) override {
+        auto it = std::lower_bound(fBreaks.begin(), fBreaks.end(), offset);
+        if (it == fBreaks.end()) {
+            fIndex = std::max(this->lastIndex(), 0);
+            return false;
+        }
+        fIndex = SkTo<Position>(std::distance(fBreaks.begin(), it));
+        return *it == offset;
+    }
+
     bool setText(const char utftext8[], int utf8Units) override {
         this->reset();
         // Reject negative lengths or null non-empty buffers
@@ -307,6 +352,8 @@ private:
         }
         return true;
     }
+
+    Position lastIndex() const { return SkTo<Position>(fBreaks.size()) - 1; }
 
     SkUnicode* fUnicode;
     SkUnicode::BreakType fType;

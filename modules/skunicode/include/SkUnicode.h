@@ -68,6 +68,7 @@ class SKUNICODE_API SkBreakIterator {
 public:
     typedef int32_t Position;
     typedef int32_t Status;
+    static constexpr Position kDone = -1;
     SkBreakIterator() = default;
     SkBreakIterator(const SkBreakIterator&) = default;
     SkBreakIterator& operator=(const SkBreakIterator&) = default;
@@ -75,6 +76,11 @@ public:
     virtual Position first() = 0;
     virtual Position current() = 0;
     virtual Position next() = 0;
+    virtual Position last() = 0;
+    virtual Position previous() = 0;
+    virtual Position preceding(Position offset) = 0;
+    virtual Position following(Position offset) = 0;
+    virtual bool isBoundary(Position offset) = 0;
     virtual Status status() = 0;
     virtual bool isDone() = 0;
     virtual bool setText(const char utftext8[], int utf8Units) = 0;

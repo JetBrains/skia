@@ -828,3 +828,65 @@ DEF_TEST(SkUnicode_Apple_Ideographic, reporter) {
     SkUnicode_Ideographic(apple.get(), reporter);
 }
 #endif
+
+#if defined(SK_UNICODE_ICU_IMPLEMENTATION) || defined(SK_UNICODE_APPLE_IMPLEMENTATION)
+// Random-access navigation (last/previous/preceding/following/isBoundary) must follow the ICU
+// ubrk_* contract on every backend that implements it natively
+static void SkUnicode_BreakIterator_Navigation(skiatest::Reporter* reporter,
+                                               sk_sp<SkUnicode> unicode) {
+    if (!unicode) {
+        ERRORF(reporter, "Could not create unicode.");
+        return;
+    }
+    constexpr SkBreakIterator::Position kDone = SkBreakIterator::kDone;
+    // Word boundaries: 0, 5, 6, 11, 12
+    const std::u16string text = u"Hello world!";
+    auto iter = unicode->makeBreakIterator("en-US", SkUnicode::BreakType::kWords);
+    REPORTER_ASSERT(reporter, iter);
+    REPORTER_ASSERT(reporter, iter->setText(text.data(), SkToInt(text.size())));
+
+    REPORTER_ASSERT(reporter, iter->current() == 0);
+    REPORTER_ASSERT(reporter, iter->following(1) == 5);
+    REPORTER_ASSERT(reporter, iter->current() == 5);
+    REPORTER_ASSERT(reporter, iter->previous() == 0);
+    REPORTER_ASSERT(reporter, iter->previous() == kDone);
+    REPORTER_ASSERT(reporter, iter->current() == 0);
+
+    REPORTER_ASSERT(reporter, iter->preceding(10) == 6);
+    REPORTER_ASSERT(reporter, iter->current() == 6);
+    REPORTER_ASSERT(reporter, iter->isBoundary(6));
+    REPORTER_ASSERT(reporter, !iter->isBoundary(7));
+    REPORTER_ASSERT(reporter, iter->current() == 11);
+    REPORTER_ASSERT(reporter, iter->isBoundary(0));
+    REPORTER_ASSERT(reporter, iter->isBoundary(12));
+    REPORTER_ASSERT(reporter, iter->following(12) == kDone);
+    REPORTER_ASSERT(reporter, iter->preceding(0) == kDone);
+
+    REPORTER_ASSERT(reporter, iter->last() == 12);
+    REPORTER_ASSERT(reporter, iter->previous() == 11);
+
+    // After next() runs out, navigation continues from the last boundary. current() is not
+    // checked here: the Apple backend does not support it in this state.
+    REPORTER_ASSERT(reporter, iter->last() == 12);
+    REPORTER_ASSERT(reporter, iter->next() == kDone);
+    REPORTER_ASSERT(reporter, iter->isDone());
+    REPORTER_ASSERT(reporter, iter->previous() == 11);
+    REPORTER_ASSERT(reporter, iter->next() == 12);
+    REPORTER_ASSERT(reporter, iter->next() == kDone);
+    REPORTER_ASSERT(reporter, iter->following(3) == 5);
+    REPORTER_ASSERT(reporter, iter->first() == 0);
+    REPORTER_ASSERT(reporter, !iter->isDone());
+}
+#endif
+
+#if defined(SK_UNICODE_ICU_IMPLEMENTATION)
+DEF_TEST(SkUnicode_BreakIterator_NavigationICU, reporter) {
+    SkUnicode_BreakIterator_Navigation(reporter, SkUnicodes::ICU::Make());
+}
+#endif
+
+#if defined(SK_UNICODE_APPLE_IMPLEMENTATION)
+DEF_TEST(SkUnicode_BreakIterator_NavigationApple, reporter) {
+    SkUnicode_BreakIterator_Navigation(reporter, SkUnicodes::Apple::Make());
+}
+#endif

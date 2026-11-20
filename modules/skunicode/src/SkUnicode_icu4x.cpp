@@ -345,6 +345,11 @@ public:
     Position first() override { SkASSERT(false); return -1; }
     Position current() override { SkASSERT(false); return -1; }
     Position next() override { SkASSERT(false); return -1; }
+    Position last() override { SkASSERT(false); return -1; }
+    Position previous() override { SkASSERT(false); return -1; }
+    Position preceding(Position) override { SkASSERT(false); return -1; }
+    Position following(Position) override { SkASSERT(false); return -1; }
+    bool isBoundary(Position) override { SkASSERT(false); return false; }
     Status status() override { SkASSERT(false); return -1; }
     bool isDone() override { SkASSERT(false); return false; }
     bool setText(const char utftext8[], int utf8Units) override { SkASSERT(false); return false; }

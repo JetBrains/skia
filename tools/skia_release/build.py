@@ -114,26 +114,6 @@ def main():
     args += ['extra_cflags+=["-fvisibility=default"]']
 
   icu_data_config = {
-      'ios': (
-          '//third_party/externals/icu/filters/ios.json',
-          '//third_party/icu/skiko_ios/filter.patch',
-      ),
-      'iosSim': (
-          '//third_party/externals/icu/filters/ios.json',
-          '//third_party/icu/skiko_ios/filter.patch',
-      ),
-      'tvos': (
-          '//third_party/externals/icu/filters/ios.json',
-          '//third_party/icu/skiko_ios/filter.patch',
-      ),
-      'tvosSim': (
-          '//third_party/externals/icu/filters/ios.json',
-          '//third_party/icu/skiko_ios/filter.patch',
-      ),
-      'macos': (
-          '//third_party/externals/icu/filters/common.json',
-          '//third_party/icu/skiko_desktop/filter.patch',
-      ),
       'windows': (
           '//third_party/externals/icu/filters/common.json',
           '//third_party/icu/skiko_desktop/filter.patch',
@@ -151,6 +131,7 @@ def main():
     ]
 
   if is_macos or is_ios or is_tvos:
+    args += ['skia_use_icu=false', 'skia_use_apple_unicode=true']
     if is_macos:
       args += ['skia_use_fonthost_mac=true', 'skia_use_vulkan=true']
       if enable_graphite_dawn:

@@ -38,9 +38,12 @@
     SKICU_FUNC(ubrk_first)            \
     SKICU_FUNC(ubrk_following)        \
     SKICU_FUNC(ubrk_getRuleStatus)    \
+    SKICU_FUNC(ubrk_isBoundary)       \
+    SKICU_FUNC(ubrk_last)             \
     SKICU_FUNC(ubrk_next)             \
     SKICU_FUNC(ubrk_open)             \
     SKICU_FUNC(ubrk_preceding)        \
+    SKICU_FUNC(ubrk_previous)         \
     SKICU_FUNC(ubrk_setText)          \
     SKICU_FUNC(ubrk_setUText)         \
     SKICU_FUNC(uloc_forLanguageTag)   \

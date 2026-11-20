@@ -51,8 +51,8 @@ if (skia_enable_skparagraph && skia_enable_skshaper && skia_enable_skunicode &&
     }
 
     skia_source_set("gm") {
-      if (paragraph_gms_enabled &&
-          (skia_use_icu || skia_use_libgrapheme || skia_use_icu4x)) {
+      if (paragraph_gms_enabled && (skia_use_icu || skia_use_libgrapheme ||
+                                    skia_use_icu4x || skia_use_apple_unicode)) {
         testonly = true
         sources = [
           "gm/ellipsis_bidi_gm.cpp",
@@ -73,7 +73,8 @@ if (skia_enable_skparagraph && skia_enable_skshaper && skia_enable_skunicode &&
     if (skia_enable_tools) {
       skia_source_set("tests") {
         if (paragraph_tests_enabled &&
-            (skia_use_icu || skia_use_libgrapheme || skia_use_icu4x)) {
+            (skia_use_icu || skia_use_libgrapheme || skia_use_icu4x ||
+             skia_use_apple_unicode)) {
           testonly = true
           sources = skparagraph_tests
           deps = [
@@ -92,7 +93,8 @@ if (skia_enable_skparagraph && skia_enable_skshaper && skia_enable_skunicode &&
 
     skia_source_set("bench") {
       if (paragraph_bench_enabled &&
-          (skia_use_icu || skia_use_libgrapheme || skia_use_icu4x)) {
+          (skia_use_icu || skia_use_libgrapheme || skia_use_icu4x ||
+           skia_use_apple_unicode)) {
         testonly = true
         sources = [ "bench/ParagraphBench.cpp" ]
         deps = [
