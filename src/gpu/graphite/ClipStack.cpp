@@ -1302,9 +1302,12 @@ public:
     void resetToFloodFill();
     bool intersectClipElement(const RawElement& clip);
 
-    // Sync any modifications back to `geometry` and return a Clip object encapsulating the
-    // tracked bounds of the now-clipped draw.
-    Clip toClip(Geometry* geometry, const NonMSAAClip& analyticClip, const SkShader* clipShader);
+    // Sync any modifications back to `geometry` and `style` and return a Clip object encapsulating
+    // the tracked bounds of the now-clipped draw.
+    Clip toClip(Geometry* geometry,
+                SkStrokeRec* style,
+                const NonMSAAClip& analyticClip,
+                const SkShader* clipShader);
 
 private:
     Transform fLocalToDevice;
@@ -1371,21 +1374,24 @@ bool ClipStack::DrawShape::applyStyle(const SkStrokeRec& style, const Rect& devi
         fLocalToDevice = Transform::Identity();
         fShapeMatchesGeometry = false;
     } else {
-        // SkStrokeRec::GetInflationRadius() returns a device-space inflation for hairlines.
         float localOutset = 0.f;
-        if (!style.isFillStyle() && !style.isHairlineStyle()) {
+        if (style.isFillStyle()) {
+            // If the shape projects to a subpixel shape, expand the local bounds by the AA radius
+            // to create a conservative clip query that preserves the oriented bounding box.
+            if (!fShape.inverted() && any(origSize < localAAOutset)) {
+                localOutset = 0.5f * localAAOutset;
+            }
+        } else {
+            // getInflationRadius() does not handle device-space inflation for hairlines, but to
+            // preserve the bounding box in local space for as long as possible, use the
+            // `localAAOutset` as a conservative estimate for the local stroke radius that would
+            // cover the hairline.
+            //
+            // For local strokes that project to a subpixel shape, clamp to the localAAOutset as
+            // well to handle rendering that pads beyond the 1/2px outset in the subpixel case.
+            const float strokeWidth = std::max(localAAOutset, style.getWidth());
             localOutset = fShape.getInflationRadius(
-                    style.getJoin(), style.getMiter(), style.getCap(), style.getWidth());
-        }
-
-        if (style.isHairlineStyle() ||
-            (!style.isFillStyle() && style.getWidth() < localAAOutset) ||
-            (style.isFillStyle() && !fShape.inverted() && any(origSize < localAAOutset))) {
-            // The geometry is a hairline or projects to a subpixel shape, so rendering will not
-            // follow the typical 1/2px outset anti-aliasing that is compatible with clipping.
-            // In this case, apply the local AA radius to the shape to have a conservative clip
-            // query while preserving the oriented bounding box.
-            localOutset += localAAOutset;
+                    style.getJoin(), style.getMiter(), style.getCap(), strokeWidth);
         }
 
         if (localOutset > 0.f) {
@@ -1436,9 +1442,16 @@ void ClipStack::DrawShape::applyScissor(const Rect& scissor) {
     fScissor.intersect(scissor); // For first call, fScissor is infinite so this is assignment
     fOuterBounds.intersect(scissor);
     fInnerBounds.intersect(scissor);
+
+    // An inverse fill whose shape is entirely outside of the scissor covers every pixel that can
+    // be drawn, so it can be replaced with a flood fill.
+    if (fShape.inverted() && fOuterBounds.isEmptyNegativeOrNaN()) {
+        this->resetToFloodFill();
+    }
 }
 
 Clip ClipStack::DrawShape::toClip(Geometry* geometry,
+                                  SkStrokeRec* style,
                                   const NonMSAAClip& analyticClip,
                                   const SkShader* clipShader) {
     if (fShapeWasModified) {
@@ -1452,6 +1465,7 @@ Clip ClipStack::DrawShape::toClip(Geometry* geometry,
             SkASSERT(fEdgeFlags == EdgeAAQuad::Flags::kAll);
             geometry->setShape(fShape);
         }
+        style->setFillStyle();
         // Reconstruct new transformedShapeBounds and outer bounds
         fTransformedShapeBounds = fLocalToDevice.mapRect(fShape.bounds());
         fOuterBounds = fTransformedShapeBounds.makeIntersect(fScissor);
@@ -1469,11 +1483,16 @@ Clip ClipStack::DrawShape::toClip(Geometry* geometry,
 }
 
 void ClipStack::DrawShape::resetToFloodFill() {
-    if (this->shapeCanBeModified() && !fShape.isFloodFill()) {
+    // An inverse-filled shape that is replaced by the clip or scissor can always become a flood
+    // fill.
+    const bool canReset = this->shapeCanBeModified() || fShape.inverted();
+    if (canReset && !fShape.isFloodFill()) {
         fShape.reset();
         fShape.setInverted(true);
         fEdgeFlags = EdgeAAQuad::Flags::kAll;
         fOuterBounds = fInnerBounds = Rect::InfiniteInverted();
+        fShapeMatchesGeometry = true;
+        fShapeCompatibleWithIntersectShape = true;
         fShapeWasModified = true;
     }
 }
@@ -1822,7 +1841,7 @@ AnalyticClip can_apply_analytic_clip(const Shape& shape, const Transform& localT
 
 Clip ClipStack::visitClipStackForDraw(const Transform& localToDevice,
                                       Geometry* geometry,
-                                      const SkStrokeRec& style,
+                                      SkStrokeRec* style,
                                       ClipStack::ElementList* outEffectiveElements) const {
     static const Clip kClippedOut = {
             Rect::InfiniteInverted(), Rect::InfiniteInverted(), SkIRect::MakeEmpty(),
@@ -1838,7 +1857,7 @@ Clip ClipStack::visitClipStackForDraw(const Transform& localToDevice,
     const Rect deviceBounds = this->deviceBounds();
 
     DrawShape draw{localToDevice, *geometry};
-    if (!draw.applyStyle(style, deviceBounds)) {
+    if (!draw.applyStyle(*style, deviceBounds)) {
         return kClippedOut;
     }
 
@@ -1861,7 +1880,7 @@ Clip ClipStack::visitClipStackForDraw(const Transform& localToDevice,
         case DrawInfluence::kNone:
             // The draw is unaffected by the clip stack (except possibly `scissor`), and there's no
             // need to visit each clip element.
-            return draw.toClip(geometry, {}, cs.shader());
+            return draw.toClip(geometry, style, {}, cs.shader());
 
         case DrawInfluence::kReplacesDraw:
             // The draw covers the clip entirely. Replace the shape with a flood fill, which can
@@ -1968,7 +1987,17 @@ Clip ClipStack::visitClipStackForDraw(const Transform& localToDevice,
         }
     }
 
-    return draw.toClip(geometry, nonMSAAClip, cs.shader());
+    return draw.toClip(geometry, style, nonMSAAClip, cs.shader());
+}
+
+int ClipStack::CountPendingElementDraws(SkSpan<const Element* const> elements) {
+    int undrawnCount = 0;
+    for (const Element* e : elements) {
+        if (!static_cast<const RawElement*>(e)->hasPendingDraw()) {
+            ++undrawnCount;
+        }
+    }
+    return undrawnCount;
 }
 
 std::pair<CompressedPaintersOrder, Layer*> ClipStack::updateClipStateForDraw(

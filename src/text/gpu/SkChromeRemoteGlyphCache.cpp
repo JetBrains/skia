@@ -40,6 +40,7 @@
 #include "src/core/SkTraceEvent.h"
 #include "src/core/SkTypeface_remote.h"
 #include "src/core/SkWriteBuffer.h"
+#include "src/partition_alloc/raw_ptr.h"
 #include "src/text/GlyphRun.h"
 #include "src/text/StrikeForGPU.h"
 #include "src/text/gpu/SubRunAllocator.h"
@@ -135,7 +136,7 @@ private:
 
     // fStrikeSpec is set every time getOrCreateCache is called. This allows the code to maintain
     // the fContext as lazy as possible.
-    const SkStrikeSpec* fStrikeSpec;
+    raw_ptr<const SkStrikeSpec> fStrikeSpec;
 
     // Have the metrics been sent for this strike. Only send them once.
     bool fHaveSentFontMetrics{false};
@@ -185,9 +186,11 @@ void RemoteStrike::writePendingGlyphs(SkWriteBuffer& buffer) {
         fHaveSentFontMetrics = true;
     }
 
-    // Make sure to install all the mask data into the glyphs before sending.
+    // Oversized glyphs are rejected by the atlas and sent as metrics-only
     for (SkGlyph& glyph: fMasksToSend) {
-        this->prepareForImage(&glyph);
+        if (SkGlyphDigest::FitsInAtlas(glyph)) {
+            this->prepareForImage(&glyph);
+        }
     }
 
     // Make sure to install all the path data into the glyphs before sending.
@@ -300,7 +303,7 @@ private:
         std::unordered_map<const SkDescriptor*, sk_sp<RemoteStrike>, MapOps, MapOps>;
     DescToRemoteStrike fDescToRemoteStrike;
 
-    SkStrikeServer::DiscardableHandleManager* const fDiscardableHandleManager;
+    const raw_ptr<SkStrikeServer::DiscardableHandleManager> fDiscardableHandleManager;
     THashSet<SkTypefaceID> fCachedTypefaces;
     size_t fMaxEntriesInDescriptorMap = kMaxEntriesInDescriptorMap;
 
@@ -511,7 +514,7 @@ protected:
     }
 
 private:
-    SkStrikeServerImpl* const fStrikeServerImpl;
+    const raw_ptr<SkStrikeServerImpl> fStrikeServerImpl;
     const sktext::gpu::SubRunControl fSubRunControl;
 };
 
@@ -615,7 +618,7 @@ private:
 
     THashMap<SkTypefaceID, sk_sp<SkTypeface>> fServerTypefaceIdToTypeface;
     sk_sp<SkStrikeClient::DiscardableHandleManager> fDiscardableHandleManager;
-    SkStrikeCache* const fStrikeCache;
+    const raw_ptr<SkStrikeCache> fStrikeCache;
     const bool fIsLogging;
 };
 

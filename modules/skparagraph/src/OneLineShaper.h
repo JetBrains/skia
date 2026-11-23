@@ -99,14 +99,14 @@ private:
                                            fBaselineShift,
                                            ++fUniqueRunId,
                                            fAdvance.fX);
-        return fCurrentRun->newRunBuffer();
+        return fCurrentRun->newRunBuffer(&fShapingBuffer, info.glyphCount);
     }
 
     void commitRunBuffer(const RunInfo&) override;
 
     TextRange clusteredText(GlyphRange& glyphs);
     ClusterIndex clusterIndex(GlyphIndex glyph) {
-        return fCurrentText.start + fCurrentRun->fClusterIndexes[glyph];
+        return fCurrentText.start + fCurrentRun->clusterIndex(glyph);
     }
     void addFullyResolved();
     void addUnresolvedWithRun(GlyphRange glyphRange);
@@ -126,6 +126,7 @@ private:
 
     // TODO: Something that is not thead-safe since we don't need it
     std::shared_ptr<Run> fCurrentRun;
+    Run::ShapingBuffer fShapingBuffer;
     std::deque<RunBlock> fUnresolvedBlocks;
     std::vector<RunBlock> fResolvedBlocks;
 };
