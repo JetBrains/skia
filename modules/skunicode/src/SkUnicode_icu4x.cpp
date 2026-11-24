@@ -52,6 +52,13 @@ public:
         fRegionalIndicator = ICU4XCodePointSetData::load_regional_indicator(fDataProvider).ok().value();
         fIdeographic = ICU4XCodePointSetData::load_ideographic(fDataProvider).ok().value();
         fLineBreaks = ICU4XCodePointMapData8::load_line_break(fDataProvider).ok().value();
+        fEmojiPresentation =
+                ICU4XCodePointSetData::load_emoji_presentation(fDataProvider).ok().value();
+        fExtendedPictographic =
+                ICU4XCodePointSetData::load_extended_pictographic(fDataProvider).ok().value();
+        fGeneralCategories =
+                ICU4XCodePointMapData8::load_general_category(fDataProvider).ok().value();
+        fBidiClasses = ICU4XCodePointMapData8::load_bidi_class(fDataProvider).ok().value();
     }
 
     ~SkUnicode_icu4x() override = default;
@@ -78,6 +85,31 @@ public:
     bool isEmojiModifier(SkUnichar utf8) override { return fEmojiModifier.contains(utf8); }
     bool isRegionalIndicator(SkUnichar utf8) override { return fRegionalIndicator.contains(utf8); }
     bool isIdeographic(SkUnichar utf8) override { return fIdeographic.contains(utf8); }
+    bool isEmojiPresentation(SkUnichar utf8) override {
+        return fEmojiPresentation.contains(utf8);
+    }
+    bool isExtendedPictographic(SkUnichar utf8) override {
+        return fExtendedPictographic.contains(utf8);
+    }
+    bool isPunctuation(SkUnichar utf8) override {
+        // ICU4X General_Category values (same numbering as ICU's UCharCategory)
+        switch (fGeneralCategories.get(utf8)) {
+            case /*DashPunctuation*/ 19:
+            case /*OpenPunctuation*/ 20:
+            case /*ClosePunctuation*/ 21:
+            case /*ConnectorPunctuation*/ 22:
+            case /*OtherPunctuation*/ 23:
+            case /*InitialPunctuation*/ 28:
+            case /*FinalPunctuation*/ 29:
+                return true;
+            default:
+                return false;
+        }
+    }
+    CharDirection charDirection(SkUnichar utf8) override {
+        // ICU4X BidiClass values use the same numbering as ICU's UCharDirection
+        return static_cast<CharDirection>(fBidiClasses.get(utf8));
+    }
 
     // TODO: is there a check for tabulation
     bool isTabulation(SkUnichar utf8) override {
@@ -337,6 +369,10 @@ private:
     ICU4XCodePointSetData fIdeographic;
     ICU4XCodePointSetData fControls;
     ICU4XCodePointMapData8 fLineBreaks;
+    ICU4XCodePointSetData fEmojiPresentation;
+    ICU4XCodePointSetData fExtendedPictographic;
+    ICU4XCodePointMapData8 fGeneralCategories;
+    ICU4XCodePointMapData8 fBidiClasses;
 };
 
 class SkBreakIterator_icu4x: public SkBreakIterator {
@@ -345,6 +381,11 @@ public:
     Position first() override { SkASSERT(false); return -1; }
     Position current() override { SkASSERT(false); return -1; }
     Position next() override { SkASSERT(false); return -1; }
+    Position last() override { SkASSERT(false); return -1; }
+    Position previous() override { SkASSERT(false); return -1; }
+    Position preceding(Position) override { SkASSERT(false); return -1; }
+    Position following(Position) override { SkASSERT(false); return -1; }
+    bool isBoundary(Position) override { SkASSERT(false); return false; }
     Status status() override { SkASSERT(false); return -1; }
     bool isDone() override { SkASSERT(false); return false; }
     bool setText(const char utftext8[], int utf8Units) override { SkASSERT(false); return false; }

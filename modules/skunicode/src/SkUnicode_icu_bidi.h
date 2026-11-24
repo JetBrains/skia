@@ -51,6 +51,7 @@ using BidiCloseCallback = void(*)(UBiDi* bidi);
     virtual void bidi_reorderVisual(const SkUnicode::BidiLevel runLevels[],
                                     int levelsCount,
                                     int32_t logicalFromVisual[]) const = 0;
+    virtual SkUnicode::CharDirection charDirection(SkUnichar unichar) const = 0;
 };
 
 #endif // SkUnicode_icu_bidi_DEFINED

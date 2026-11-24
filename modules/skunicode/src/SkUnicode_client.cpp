@@ -209,6 +209,10 @@ public:
         SkASSERT(runLevels != nullptr);
         fBidiFact->bidi_reorderVisual(runLevels, levelsCount, logicalFromVisual);
     }
+
+    CharDirection charDirection(SkUnichar unichar) override {
+        return fBidiFact->charDirection(unichar);
+    }
 private:
     friend class SkBreakIterator_client;
 
@@ -229,6 +233,44 @@ public:
       { return fData->fLineBreaks[fStart + fLastResult].pos; }
     Position next() override
       { return fData->fLineBreaks[fStart + fLastResult + 1].pos; }
+
+    Position last() override
+      { return fData->fLineBreaks[fStart + (fLastResult = fEnd - fStart)].pos; }
+    Position previous() override {
+        if (fLastResult == 0) {
+            return SkBreakIterator::kDone;
+        }
+        return fData->fLineBreaks[fStart + --fLastResult].pos;
+    }
+    Position preceding(Position offset) override {
+        for (Position i = fEnd - fStart; i > 0; --i) {
+            if (SkTo<Position>(fData->fLineBreaks[fStart + i - 1].pos) < offset) {
+                return fData->fLineBreaks[fStart + (fLastResult = i - 1)].pos;
+            }
+        }
+        fLastResult = 0;
+        return SkBreakIterator::kDone;
+    }
+    Position following(Position offset) override {
+        for (Position i = 0; i <= fEnd - fStart; ++i) {
+            if (SkTo<Position>(fData->fLineBreaks[fStart + i].pos) > offset) {
+                return fData->fLineBreaks[fStart + (fLastResult = i)].pos;
+            }
+        }
+        fLastResult = fEnd - fStart;
+        return SkBreakIterator::kDone;
+    }
+    bool isBoundary(Position offset) override {
+        for (Position i = 0; i <= fEnd - fStart; ++i) {
+            Position pos = SkTo<Position>(fData->fLineBreaks[fStart + i].pos);
+            if (pos >= offset) {
+                fLastResult = i;
+                return pos == offset;
+            }
+        }
+        fLastResult = fEnd - fStart;
+        return false;
+    }
     Status status() override {
         return fData->fLineBreaks[fStart + fLastResult].breakType ==
                        SkUnicode::LineBreakType::kHardLineBreak

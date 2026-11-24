@@ -252,6 +252,12 @@ jobs:
         with:
           msystem: MSYS
           update: false
+          # The action's package-cache save step runs paccache, which dies on
+          # the current msys2 xargs ("bc_ctl.arg_max >= LINE_MAX" assertion)
+          # whenever a cache miss forces a fresh install. The build itself
+          # only needs clang-cl/make/patch and never invokes xargs, so skip
+          # the package cache instead of pinning an msys2 release.
+          cache: false
           install: >-
             mingw-w64-clang-x86_64-clang
             mingw-w64-clang-x86_64-libc++

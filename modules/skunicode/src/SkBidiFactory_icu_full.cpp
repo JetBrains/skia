@@ -57,3 +57,7 @@ void SkBidiICUFactory::bidi_reorderVisual(const SkUnicode::BidiLevel runLevels[]
     SkASSERT(runLevels != nullptr);
     SkGetICULib()->f_ubidi_reorderVisual(runLevels, levelsCount, logicalFromVisual);
 }
+
+SkUnicode::CharDirection SkBidiICUFactory::charDirection(SkUnichar unichar) const {
+    return static_cast<SkUnicode::CharDirection>(SkGetICULib()->f_u_charDirection(unichar));
+}

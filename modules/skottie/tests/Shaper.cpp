@@ -388,6 +388,12 @@ DEF_TEST(Skottie_Shaper_breakiter, r) {
             }
             return fCurrent;
         }
+        // The intersection test only iterates forward
+        Position last() override { SkUNREACHABLE; }
+        Position previous() override { SkUNREACHABLE; }
+        Position preceding(Position) override { SkUNREACHABLE; }
+        Position following(Position) override { SkUNREACHABLE; }
+        bool isBoundary(Position) override { SkUNREACHABLE; }
         Status status() override { return 0; }
         bool isDone() override { return fDone; }
         bool setText(const char[], int) override {

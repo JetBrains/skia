@@ -164,17 +164,17 @@ UNIX_ONLY_TEST(SkUnicode_Compiled_GetSentences, reporter) {
 }
 #endif
 
-#if defined(SK_UNICODE_APPLE_IMPLEMENTATION)
-DEF_TEST(SkUnicode_Apple_GetUtf8Words, reporter) {
-    SkString text("1 22 333 4444 55555 666666 7777777");
-    std::vector<SkUnicode::Position> expected = { 0, 1, 2, 4, 5, 8, 9, 13, 14, 19, 20, 26, 27, 34 };
-    auto apple = SkUnicodes::Apple::Make();
-    if (!apple) {
-        REPORTER_ASSERT(reporter, apple);
+#if defined(SK_UNICODE_ICU_IMPLEMENTATION) || defined(SK_UNICODE_APPLE_IMPLEMENTATION)
+static void SkUnicode_GetUtf8WordsHostile(skiatest::Reporter* reporter,
+                                          sk_sp<SkUnicode> unicode) {
+    if (!unicode) {
+        ERRORF(reporter, "Could not create unicode.");
         return;
     }
+    SkString text("1 22 333 4444 55555 666666 7777777");
+    std::vector<SkUnicode::Position> expected = { 0, 1, 2, 4, 5, 8, 9, 13, 14, 19, 20, 26, 27, 34 };
     std::vector<SkUnicode::Position> results;
-    auto result = apple->getUtf8Words(text.data(), text.size(), "en", &results);
+    auto result = unicode->getUtf8Words(text.data(), text.size(), "en", &results);
     REPORTER_ASSERT(reporter, result);
     REPORTER_ASSERT(reporter, results.size() == expected.size());
     for (auto i = 0ul; i < results.size(); ++i) {
@@ -184,7 +184,7 @@ DEF_TEST(SkUnicode_Apple_GetUtf8Words, reporter) {
     SkString cyrillic("Привет мир");
     std::vector<SkUnicode::Position> cyrillicExpected = {0, 12, 13, 19};
     results.clear();
-    result = apple->getUtf8Words(cyrillic.data(), cyrillic.size(), "ru", &results);
+    result = unicode->getUtf8Words(cyrillic.data(), cyrillic.size(), "ru", &results);
     REPORTER_ASSERT(reporter, result);
     REPORTER_ASSERT(reporter, results.size() == cyrillicExpected.size());
     for (auto i = 0ul; i < results.size(); ++i) {
@@ -194,7 +194,7 @@ DEF_TEST(SkUnicode_Apple_GetUtf8Words, reporter) {
     SkString mixed("Hello مرحبا World بالعالم");
     std::vector<SkUnicode::Position> mixedExpected = {0, 5, 6, 16, 17, 22, 23, 37};
     results.clear();
-    result = apple->getUtf8Words(mixed.data(), mixed.size(), nullptr, &results);
+    result = unicode->getUtf8Words(mixed.data(), mixed.size(), nullptr, &results);
     REPORTER_ASSERT(reporter, result);
     REPORTER_ASSERT(reporter, results.size() == mixedExpected.size());
     for (auto i = 0ul; i < results.size(); ++i) {
@@ -202,16 +202,16 @@ DEF_TEST(SkUnicode_Apple_GetUtf8Words, reporter) {
     }
 }
 
-DEF_TEST(SkUnicode_Apple_GetSentences, reporter) {
-    auto apple = SkUnicodes::Apple::Make();
-    if (!apple) {
-        REPORTER_ASSERT(reporter, apple);
+static void SkUnicode_GetSentencesHostile(skiatest::Reporter* reporter,
+                                          sk_sp<SkUnicode> unicode) {
+    if (!unicode) {
+        ERRORF(reporter, "Could not create unicode.");
         return;
     }
     SkString text("Hello world! Hello world? Hello world... Not a sentence end: 3.1415926");
     std::vector<SkUnicode::Position> expected = {0, 13, 26, 41, 70};
     std::vector<SkUnicode::Position> results;
-    auto result = apple->getSentences(text.data(), text.size(), nullptr, &results);
+    auto result = unicode->getSentences(text.data(), text.size(), nullptr, &results);
     REPORTER_ASSERT(reporter, result);
     REPORTER_ASSERT(reporter, results.size() == expected.size());
     for (auto i = 0ul; i < results.size(); ++i) {
@@ -221,7 +221,7 @@ DEF_TEST(SkUnicode_Apple_GetSentences, reporter) {
     SkString cyrillic("Привет мир! Как дела? Все хорошо.");
     std::vector<SkUnicode::Position> cyrillicExpected = {0, 21, 38, 58};
     results.clear();
-    result = apple->getSentences(cyrillic.data(), cyrillic.size(), "ru", &results);
+    result = unicode->getSentences(cyrillic.data(), cyrillic.size(), "ru", &results);
     REPORTER_ASSERT(reporter, result);
     REPORTER_ASSERT(reporter, results.size() == cyrillicExpected.size());
     for (auto i = 0ul; i < results.size(); ++i) {
@@ -231,7 +231,7 @@ DEF_TEST(SkUnicode_Apple_GetSentences, reporter) {
     SkString mixed("Hello world! مرحبا بالعالم؟ How are you?");
     std::vector<SkUnicode::Position> mixedExpected = {0, 13, 41, 53};
     results.clear();
-    result = apple->getSentences(mixed.data(), mixed.size(), nullptr, &results);
+    result = unicode->getSentences(mixed.data(), mixed.size(), nullptr, &results);
     REPORTER_ASSERT(reporter, result);
     REPORTER_ASSERT(reporter, results.size() == mixedExpected.size());
     for (auto i = 0ul; i < results.size(); ++i) {
@@ -239,10 +239,10 @@ DEF_TEST(SkUnicode_Apple_GetSentences, reporter) {
     }
 }
 
-DEF_TEST(SkUnicode_Apple_BreakIterator_Utf8_Hostile, reporter) {
-    auto apple = SkUnicodes::Apple::Make();
-    REPORTER_ASSERT(reporter, apple);
-    if (!apple) {
+static void SkUnicode_BreakIteratorUtf8Hostile(skiatest::Reporter* reporter,
+                                              sk_sp<SkUnicode> unicode) {
+    if (!unicode) {
+        ERRORF(reporter, "Could not create unicode.");
         return;
     }
 
@@ -255,14 +255,15 @@ DEF_TEST(SkUnicode_Apple_BreakIterator_Utf8_Hostile, reporter) {
     };
 
     {
+        // Word boundaries in UTF-8 byte offsets
         SkString text("Привет мир");
-        auto wordIter = apple->makeBreakIterator("ru", SkUnicode::BreakType::kWords);
+        auto wordIter = unicode->makeBreakIterator("ru", SkUnicode::BreakType::kWords);
         REPORTER_ASSERT(reporter, wordIter);
         REPORTER_ASSERT(reporter, wordIter->setText(text.data(), text.size()));
         std::vector<SkBreakIterator::Position> expectedWords = {0, 12, 13, 19};
         REPORTER_ASSERT(reporter, collectBreaks(wordIter.get()) == expectedWords);
 
-        auto graphemeIter = apple->makeBreakIterator("ru", SkUnicode::BreakType::kGraphemes);
+        auto graphemeIter = unicode->makeBreakIterator("ru", SkUnicode::BreakType::kGraphemes);
         REPORTER_ASSERT(reporter, graphemeIter);
         REPORTER_ASSERT(reporter, graphemeIter->setText(text.data(), text.size()));
         std::vector<SkBreakIterator::Position> expectedGraphemes = {
@@ -273,7 +274,7 @@ DEF_TEST(SkUnicode_Apple_BreakIterator_Utf8_Hostile, reporter) {
 
     {
         SkString text("你好世界");
-        auto graphemeIter = apple->makeBreakIterator("zh", SkUnicode::BreakType::kGraphemes);
+        auto graphemeIter = unicode->makeBreakIterator("zh", SkUnicode::BreakType::kGraphemes);
         REPORTER_ASSERT(reporter, graphemeIter);
         REPORTER_ASSERT(reporter, graphemeIter->setText(text.data(), text.size()));
         std::vector<SkBreakIterator::Position> expectedGraphemes = {0, 3, 6, 9, 12};
@@ -282,7 +283,7 @@ DEF_TEST(SkUnicode_Apple_BreakIterator_Utf8_Hostile, reporter) {
 
     {
         SkString text("😀😃😄");
-        auto graphemeIter = apple->makeBreakIterator(SkUnicode::BreakType::kGraphemes);
+        auto graphemeIter = unicode->makeBreakIterator(SkUnicode::BreakType::kGraphemes);
         REPORTER_ASSERT(reporter, graphemeIter);
         REPORTER_ASSERT(reporter, graphemeIter->setText(text.data(), text.size()));
         std::vector<SkBreakIterator::Position> expectedGraphemes = {0, 4, 8, 12};
@@ -290,9 +291,9 @@ DEF_TEST(SkUnicode_Apple_BreakIterator_Utf8_Hostile, reporter) {
     }
 
     {
-        // UAX #14 LF and U+2029 Paragraph Separator must produce kHardLineBreakBefore status
+        // UAX #14 LF and U+2029 Paragraph Separator must produce UBRK_LINE_HARD statuses
         SkString text("Привет\nмир\u2029конец");
-        auto lineIter = apple->makeBreakIterator(SkUnicode::BreakType::kLines);
+        auto lineIter = unicode->makeBreakIterator(SkUnicode::BreakType::kLines);
         REPORTER_ASSERT(reporter, lineIter);
         REPORTER_ASSERT(reporter, lineIter->setText(text.data(), text.size()));
         std::vector<SkBreakIterator::Position> breaks;
@@ -303,29 +304,32 @@ DEF_TEST(SkUnicode_Apple_BreakIterator_Utf8_Hostile, reporter) {
         }
         std::vector<SkBreakIterator::Position> expectedLines = {0, 13, 22, 32};
         REPORTER_ASSERT(reporter, breaks == expectedLines);
-        REPORTER_ASSERT(reporter, !(statuses[0] & SkUnicode::CodeUnitFlags::kHardLineBreakBefore));
-        REPORTER_ASSERT(reporter, statuses[1] & SkUnicode::CodeUnitFlags::kHardLineBreakBefore);
-        REPORTER_ASSERT(reporter, statuses[2] & SkUnicode::CodeUnitFlags::kHardLineBreakBefore);
-        REPORTER_ASSERT(reporter, !(statuses[3] & SkUnicode::CodeUnitFlags::kHardLineBreakBefore));
+        std::vector<SkBreakIterator::Status> expectedStatuses = {
+            (SkBreakIterator::Status)SkUnicode::LineBreakType::kSoftLineBreak,
+            (SkBreakIterator::Status)SkUnicode::LineBreakType::kHardLineBreak,
+            (SkBreakIterator::Status)SkUnicode::LineBreakType::kHardLineBreak,
+            (SkBreakIterator::Status)SkUnicode::LineBreakType::kSoftLineBreak,
+        };
+        REPORTER_ASSERT(reporter, statuses == expectedStatuses);
     }
 
     {
         // UAX #29 GB3 coalesces CRLF into a single grapheme cluster; empty and CR-only inputs
         // must still emit valid boundary sentinels
         SkString crlf("a\r\nb");
-        auto graphemeIter = apple->makeBreakIterator(SkUnicode::BreakType::kGraphemes);
+        auto graphemeIter = unicode->makeBreakIterator(SkUnicode::BreakType::kGraphemes);
         REPORTER_ASSERT(reporter, graphemeIter->setText(crlf.data(), crlf.size()));
         std::vector<SkBreakIterator::Position> expectedCrlf = {0, 1, 3, 4};
         REPORTER_ASSERT(reporter, collectBreaks(graphemeIter.get()) == expectedCrlf);
 
         TArray<SkUnicode::CodeUnitFlags, true> flags;
         REPORTER_ASSERT(reporter,
-                        apple->computeCodeUnitFlags(crlf.data(), crlf.size(), false, &flags));
+                        unicode->computeCodeUnitFlags(crlf.data(), crlf.size(), false, &flags));
         REPORTER_ASSERT(reporter, flags[1] & SkUnicode::CodeUnitFlags::kGraphemeStart);
         REPORTER_ASSERT(reporter, !(flags[2] & SkUnicode::CodeUnitFlags::kGraphemeStart));
         REPORTER_ASSERT(reporter, flags[3] & SkUnicode::CodeUnitFlags::kGraphemeStart);
 
-        auto lineIter = apple->makeBreakIterator(SkUnicode::BreakType::kLines);
+        auto lineIter = unicode->makeBreakIterator(SkUnicode::BreakType::kLines);
         REPORTER_ASSERT(reporter, lineIter->setText("", 0));
         std::vector<SkBreakIterator::Position> expectedEmpty = {0};
         REPORTER_ASSERT(reporter, collectBreaks(lineIter.get()) == expectedEmpty);
@@ -334,7 +338,7 @@ DEF_TEST(SkUnicode_Apple_BreakIterator_Utf8_Hostile, reporter) {
         std::vector<SkBreakIterator::Position> expectedCrOnly = {0, 1};
         REPORTER_ASSERT(reporter, collectBreaks(lineIter.get()) == expectedCrOnly);
 
-        REPORTER_ASSERT(reporter, apple->computeCodeUnitFlags(crlf.data(), 0, false, &flags));
+        REPORTER_ASSERT(reporter, unicode->computeCodeUnitFlags(crlf.data(), 0, false, &flags));
         REPORTER_ASSERT(reporter, flags.size() == 1);
         REPORTER_ASSERT(reporter,
                         flags[0] == (SkUnicode::CodeUnitFlags::kSoftLineBreakBefore |
@@ -342,10 +346,10 @@ DEF_TEST(SkUnicode_Apple_BreakIterator_Utf8_Hostile, reporter) {
     }
 }
 
-DEF_TEST(SkUnicode_Apple_BreakIterator_Utf16_Hostile, reporter) {
-    auto apple = SkUnicodes::Apple::Make();
-    REPORTER_ASSERT(reporter, apple);
-    if (!apple) {
+static void SkUnicode_BreakIteratorUtf16Hostile(skiatest::Reporter* reporter,
+                                                sk_sp<SkUnicode> unicode) {
+    if (!unicode) {
+        ERRORF(reporter, "Could not create unicode.");
         return;
     }
 
@@ -358,14 +362,15 @@ DEF_TEST(SkUnicode_Apple_BreakIterator_Utf16_Hostile, reporter) {
     };
 
     {
+        // Word boundaries in UTF-16 code unit offsets
         std::u16string u16Text = u"Привет мир";
-        auto wordIter = apple->makeBreakIterator("ru", SkUnicode::BreakType::kWords);
+        auto wordIter = unicode->makeBreakIterator("ru", SkUnicode::BreakType::kWords);
         REPORTER_ASSERT(reporter, wordIter);
         REPORTER_ASSERT(reporter, wordIter->setText(u16Text.data(), u16Text.size()));
         std::vector<SkBreakIterator::Position> expectedWords = {0, 6, 7, 10};
         REPORTER_ASSERT(reporter, collectBreaks(wordIter.get()) == expectedWords);
 
-        auto graphemeIter = apple->makeBreakIterator("ru", SkUnicode::BreakType::kGraphemes);
+        auto graphemeIter = unicode->makeBreakIterator("ru", SkUnicode::BreakType::kGraphemes);
         REPORTER_ASSERT(reporter, graphemeIter);
         REPORTER_ASSERT(reporter, graphemeIter->setText(u16Text.data(), u16Text.size()));
         std::vector<SkBreakIterator::Position> expectedGraphemes = {
@@ -376,7 +381,7 @@ DEF_TEST(SkUnicode_Apple_BreakIterator_Utf16_Hostile, reporter) {
 
     {
         std::u16string u16Text = u"😀😃😄";
-        auto graphemeIter = apple->makeBreakIterator(SkUnicode::BreakType::kGraphemes);
+        auto graphemeIter = unicode->makeBreakIterator(SkUnicode::BreakType::kGraphemes);
         REPORTER_ASSERT(reporter, graphemeIter);
         REPORTER_ASSERT(reporter, graphemeIter->setText(u16Text.data(), u16Text.size()));
         std::vector<SkBreakIterator::Position> expectedGraphemes = {0, 2, 4, 6};
@@ -384,9 +389,9 @@ DEF_TEST(SkUnicode_Apple_BreakIterator_Utf16_Hostile, reporter) {
     }
 
     {
-        // UAX #14 LF and U+2029 Paragraph Separator must produce kHardLineBreakBefore in UTF-16
+        // UAX #14 LF and U+2029 Paragraph Separator must produce UBRK_LINE_HARD in UTF-16
         std::u16string u16Text = u"Привет\nмир\u2029конец";
-        auto lineIter = apple->makeBreakIterator(SkUnicode::BreakType::kLines);
+        auto lineIter = unicode->makeBreakIterator(SkUnicode::BreakType::kLines);
         REPORTER_ASSERT(reporter, lineIter);
         REPORTER_ASSERT(reporter, lineIter->setText(u16Text.data(), u16Text.size()));
         std::vector<SkBreakIterator::Position> breaks;
@@ -397,28 +402,31 @@ DEF_TEST(SkUnicode_Apple_BreakIterator_Utf16_Hostile, reporter) {
         }
         std::vector<SkBreakIterator::Position> expectedLines = {0, 7, 11, 16};
         REPORTER_ASSERT(reporter, breaks == expectedLines);
-        REPORTER_ASSERT(reporter, !(statuses[0] & SkUnicode::CodeUnitFlags::kHardLineBreakBefore));
-        REPORTER_ASSERT(reporter, statuses[1] & SkUnicode::CodeUnitFlags::kHardLineBreakBefore);
-        REPORTER_ASSERT(reporter, statuses[2] & SkUnicode::CodeUnitFlags::kHardLineBreakBefore);
-        REPORTER_ASSERT(reporter, !(statuses[3] & SkUnicode::CodeUnitFlags::kHardLineBreakBefore));
+        std::vector<SkBreakIterator::Status> expectedStatuses = {
+            (SkBreakIterator::Status)SkUnicode::LineBreakType::kSoftLineBreak,
+            (SkBreakIterator::Status)SkUnicode::LineBreakType::kHardLineBreak,
+            (SkBreakIterator::Status)SkUnicode::LineBreakType::kHardLineBreak,
+            (SkBreakIterator::Status)SkUnicode::LineBreakType::kSoftLineBreak,
+        };
+        REPORTER_ASSERT(reporter, statuses == expectedStatuses);
     }
 
     {
         // UAX #29 GB3 coalesces CRLF into a single grapheme cluster in UTF-16
         std::u16string crlf = u"a\r\nb";
-        auto graphemeIter = apple->makeBreakIterator(SkUnicode::BreakType::kGraphemes);
+        auto graphemeIter = unicode->makeBreakIterator(SkUnicode::BreakType::kGraphemes);
         REPORTER_ASSERT(reporter, graphemeIter->setText(crlf.data(), crlf.size()));
         std::vector<SkBreakIterator::Position> expectedCrlf = {0, 1, 3, 4};
         REPORTER_ASSERT(reporter, collectBreaks(graphemeIter.get()) == expectedCrlf);
 
         TArray<SkUnicode::CodeUnitFlags, true> flags;
         REPORTER_ASSERT(reporter,
-                        apple->computeCodeUnitFlags(crlf.data(), crlf.size(), false, &flags));
+                        unicode->computeCodeUnitFlags(crlf.data(), crlf.size(), false, &flags));
         REPORTER_ASSERT(reporter, flags[1] & SkUnicode::CodeUnitFlags::kGraphemeStart);
         REPORTER_ASSERT(reporter, !(flags[2] & SkUnicode::CodeUnitFlags::kGraphemeStart));
         REPORTER_ASSERT(reporter, flags[3] & SkUnicode::CodeUnitFlags::kGraphemeStart);
 
-        auto lineIter = apple->makeBreakIterator(SkUnicode::BreakType::kLines);
+        auto lineIter = unicode->makeBreakIterator(SkUnicode::BreakType::kLines);
         REPORTER_ASSERT(reporter, lineIter->setText(u"", 0));
         std::vector<SkBreakIterator::Position> expectedEmpty = {0};
         REPORTER_ASSERT(reporter, collectBreaks(lineIter.get()) == expectedEmpty);
@@ -427,7 +435,7 @@ DEF_TEST(SkUnicode_Apple_BreakIterator_Utf16_Hostile, reporter) {
         std::vector<SkBreakIterator::Position> expectedCrOnly = {0, 1};
         REPORTER_ASSERT(reporter, collectBreaks(lineIter.get()) == expectedCrOnly);
 
-        REPORTER_ASSERT(reporter, apple->computeCodeUnitFlags(crlf.data(), 0, false, &flags));
+        REPORTER_ASSERT(reporter, unicode->computeCodeUnitFlags(crlf.data(), 0, false, &flags));
         REPORTER_ASSERT(reporter, flags.size() == 1);
         REPORTER_ASSERT(reporter,
                         flags[0] == (SkUnicode::CodeUnitFlags::kSoftLineBreakBefore |
@@ -435,6 +443,35 @@ DEF_TEST(SkUnicode_Apple_BreakIterator_Utf16_Hostile, reporter) {
     }
 }
 
+#if defined(SK_UNICODE_ICU_IMPLEMENTATION)
+DEF_TEST(SkUnicode_GetUtf8WordsHostileICU, reporter) {
+    SkUnicode_GetUtf8WordsHostile(reporter, SkUnicodes::ICU::Make());
+}
+DEF_TEST(SkUnicode_GetSentencesHostileICU, reporter) {
+    SkUnicode_GetSentencesHostile(reporter, SkUnicodes::ICU::Make());
+}
+DEF_TEST(SkUnicode_BreakIteratorUtf8HostileICU, reporter) {
+    SkUnicode_BreakIteratorUtf8Hostile(reporter, SkUnicodes::ICU::Make());
+}
+DEF_TEST(SkUnicode_BreakIteratorUtf16HostileICU, reporter) {
+    SkUnicode_BreakIteratorUtf16Hostile(reporter, SkUnicodes::ICU::Make());
+}
+#endif
+
+#if defined(SK_UNICODE_APPLE_IMPLEMENTATION)
+DEF_TEST(SkUnicode_GetUtf8WordsHostileApple, reporter) {
+    SkUnicode_GetUtf8WordsHostile(reporter, SkUnicodes::Apple::Make());
+}
+DEF_TEST(SkUnicode_GetSentencesHostileApple, reporter) {
+    SkUnicode_GetSentencesHostile(reporter, SkUnicodes::Apple::Make());
+}
+DEF_TEST(SkUnicode_BreakIteratorUtf8HostileApple, reporter) {
+    SkUnicode_BreakIteratorUtf8Hostile(reporter, SkUnicodes::Apple::Make());
+}
+DEF_TEST(SkUnicode_BreakIteratorUtf16HostileApple, reporter) {
+    SkUnicode_BreakIteratorUtf16Hostile(reporter, SkUnicodes::Apple::Make());
+}
+#endif
 #endif
 
 [[maybe_unused]] static void SkUnicode_CharProperties(SkUnicode* unicode,
@@ -828,3 +865,95 @@ DEF_TEST(SkUnicode_Apple_Ideographic, reporter) {
     SkUnicode_Ideographic(apple.get(), reporter);
 }
 #endif
+
+#if defined(SK_UNICODE_ICU_IMPLEMENTATION) || defined(SK_UNICODE_APPLE_IMPLEMENTATION)
+// Random-access navigation (last/previous/preceding/following/isBoundary) must follow the ICU
+// ubrk_* contract on every backend that implements it natively
+static void SkUnicode_BreakIterator_Navigation(skiatest::Reporter* reporter,
+                                               sk_sp<SkUnicode> unicode) {
+    if (!unicode) {
+        ERRORF(reporter, "Could not create unicode.");
+        return;
+    }
+    constexpr SkBreakIterator::Position kDone = SkBreakIterator::kDone;
+    // Word boundaries: 0, 5, 6, 11, 12
+    const std::u16string text = u"Hello world!";
+    auto iter = unicode->makeBreakIterator("en-US", SkUnicode::BreakType::kWords);
+    REPORTER_ASSERT(reporter, iter);
+    REPORTER_ASSERT(reporter, iter->setText(text.data(), SkToInt(text.size())));
+
+    REPORTER_ASSERT(reporter, iter->current() == 0);
+    REPORTER_ASSERT(reporter, iter->following(1) == 5);
+    REPORTER_ASSERT(reporter, iter->current() == 5);
+    REPORTER_ASSERT(reporter, iter->previous() == 0);
+    REPORTER_ASSERT(reporter, iter->previous() == kDone);
+    REPORTER_ASSERT(reporter, iter->current() == 0);
+
+    REPORTER_ASSERT(reporter, iter->preceding(10) == 6);
+    REPORTER_ASSERT(reporter, iter->current() == 6);
+    REPORTER_ASSERT(reporter, iter->isBoundary(6));
+    REPORTER_ASSERT(reporter, !iter->isBoundary(7));
+    REPORTER_ASSERT(reporter, iter->current() == 11);
+    REPORTER_ASSERT(reporter, iter->isBoundary(0));
+    REPORTER_ASSERT(reporter, iter->isBoundary(12));
+    REPORTER_ASSERT(reporter, iter->following(12) == kDone);
+    REPORTER_ASSERT(reporter, iter->current() == 12);
+    REPORTER_ASSERT(reporter, iter->preceding(0) == kDone);
+    REPORTER_ASSERT(reporter, iter->current() == 0);
+
+    REPORTER_ASSERT(reporter, iter->last() == 12);
+    REPORTER_ASSERT(reporter, iter->previous() == 11);
+
+    REPORTER_ASSERT(reporter, iter->last() == 12);
+    REPORTER_ASSERT(reporter, iter->next() == kDone);
+    REPORTER_ASSERT(reporter, iter->isDone());
+    REPORTER_ASSERT(reporter, iter->current() == 12);
+    REPORTER_ASSERT(reporter, iter->previous() == 11);
+    REPORTER_ASSERT(reporter, iter->next() == 12);
+    REPORTER_ASSERT(reporter, iter->next() == kDone);
+    REPORTER_ASSERT(reporter, iter->following(3) == 5);
+    REPORTER_ASSERT(reporter, iter->first() == 0);
+    REPORTER_ASSERT(reporter, !iter->isDone());
+}
+#endif
+
+#if defined(SK_UNICODE_ICU_IMPLEMENTATION)
+DEF_TEST(SkUnicode_BreakIterator_NavigationICU, reporter) {
+    SkUnicode_BreakIterator_Navigation(reporter, SkUnicodes::ICU::Make());
+}
+#endif
+
+#if defined(SK_UNICODE_APPLE_IMPLEMENTATION)
+DEF_TEST(SkUnicode_BreakIterator_NavigationApple, reporter) {
+    SkUnicode_BreakIterator_Navigation(reporter, SkUnicodes::Apple::Make());
+}
+#endif
+
+// Properties used by skiko's org.jetbrains.skia.icu API and FontRunIterator; values match ICU
+DEF_TEST_UNICODES(SkUnicode_CharPropertiesForSkiko, reporter) {
+    using Dir = SkUnicode::CharDirection;
+    REPORTER_ASSERT(reporter, unicode->charDirection('A') == Dir::kLeftToRight);
+    REPORTER_ASSERT(reporter, unicode->charDirection(0x05D0) == Dir::kRightToLeft);        // א
+    REPORTER_ASSERT(reporter, unicode->charDirection(0x0627) == Dir::kRightToLeftArabic);  // ا
+    REPORTER_ASSERT(reporter, unicode->charDirection('1') == Dir::kEuropeanNumber);
+    REPORTER_ASSERT(reporter, unicode->charDirection(' ') == Dir::kWhiteSpaceNeutral);
+    REPORTER_ASSERT(reporter, unicode->charDirection('!') == Dir::kOtherNeutral);
+    REPORTER_ASSERT(reporter, unicode->charDirection(0x200B) == Dir::kBoundaryNeutral);
+    REPORTER_ASSERT(reporter, unicode->charDirection(0x2069) == Dir::kPopDirectionalIsolate);
+
+    REPORTER_ASSERT(reporter, unicode->isPunctuation('!'));
+    REPORTER_ASSERT(reporter, unicode->isPunctuation('_'));
+    REPORTER_ASSERT(reporter, unicode->isPunctuation(0xFF0C));   // ，
+    REPORTER_ASSERT(reporter, unicode->isPunctuation(0x00AB));   // «
+    REPORTER_ASSERT(reporter, !unicode->isPunctuation('A'));
+    REPORTER_ASSERT(reporter, !unicode->isPunctuation('+'));     // Sm, not P*
+    REPORTER_ASSERT(reporter, !unicode->isPunctuation(' '));
+
+    REPORTER_ASSERT(reporter, unicode->isEmojiPresentation(0x1F600));      // 😀
+    REPORTER_ASSERT(reporter, !unicode->isEmojiPresentation(0x00A9));      // ©
+    REPORTER_ASSERT(reporter, !unicode->isEmojiPresentation('#'));
+    REPORTER_ASSERT(reporter, unicode->isExtendedPictographic(0x1F600));
+    REPORTER_ASSERT(reporter, unicode->isExtendedPictographic(0x00A9));
+    REPORTER_ASSERT(reporter, !unicode->isExtendedPictographic('#'));
+    REPORTER_ASSERT(reporter, !unicode->isExtendedPictographic('A'));
+}

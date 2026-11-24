@@ -105,6 +105,19 @@ class SkBreakIterator_icu : public SkBreakIterator {
     Position first() override { return fLastResult = sk_ubrk_first(fBreakIterator.get()); }
     Position current() override { return fLastResult = sk_ubrk_current(fBreakIterator.get()); }
     Position next() override { return fLastResult = sk_ubrk_next(fBreakIterator.get()); }
+    Position last() override { return fLastResult = sk_ubrk_last(fBreakIterator.get()); }
+    Position previous() override { return fLastResult = sk_ubrk_previous(fBreakIterator.get()); }
+    Position preceding(Position offset) override {
+        return fLastResult = sk_ubrk_preceding(fBreakIterator.get(), offset);
+    }
+    Position following(Position offset) override {
+        return fLastResult = sk_ubrk_following(fBreakIterator.get(), offset);
+    }
+    bool isBoundary(Position offset) override {
+        bool result = sk_ubrk_isBoundary(fBreakIterator.get(), offset);
+        fLastResult = sk_ubrk_current(fBreakIterator.get());
+        return result;
+    }
     Status status() override { return sk_ubrk_getRuleStatus(fBreakIterator.get()); }
     bool isDone() override { return fLastResult == UBRK_DONE; }
 
@@ -463,6 +476,16 @@ class SkUnicode_icu : public SkUnicode {
         return sk_u_hasBinaryProperty(unichar, UCHAR_IDEOGRAPHIC);
     }
 
+    bool isEmojiPresentation(SkUnichar unichar) override {
+        return sk_u_hasBinaryProperty(unichar, UCHAR_EMOJI_PRESENTATION);
+    }
+
+    bool isExtendedPictographic(SkUnichar unichar) override {
+        return sk_u_hasBinaryProperty(unichar, UCHAR_EXTENDED_PICTOGRAPHIC);
+    }
+
+    bool isPunctuation(SkUnichar unichar) override { return sk_u_ispunct(unichar); }
+
     bool isTabulation(SkUnichar utf8) override {
         return utf8 == '\t';
     }
@@ -687,6 +710,10 @@ public:
         }
         SkASSERT(runLevels != nullptr);
         fBidiFact->bidi_reorderVisual(runLevels, levelsCount, logicalFromVisual);
+    }
+
+    CharDirection charDirection(SkUnichar unichar) override {
+        return fBidiFact->charDirection(unichar);
     }
 
 private:
