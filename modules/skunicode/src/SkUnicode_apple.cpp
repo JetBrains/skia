@@ -16,7 +16,6 @@
 #include "modules/skunicode/src/SkUnicode_hardcoded.h"
 #include "modules/skunicode/src/SkUnicode_icu_bidi.h"
 #include "src/core/SkBitmaskEnum.h"
-#include "src/core/SkUTF.h"
 #include "src/utils/mac/SkUniqueCFRef.h"
 
 #include <CoreFoundation/CoreFoundation.h>
@@ -139,66 +138,72 @@ public:
 
     ~SkBreakIterator_apple() override = default;
 
-    Position first() override { return fBreaks.empty() ? 0 : fBreaks[(fIndex = 0)]; }
-    Position current() override { return fBreaks.empty() ? 0 : fBreaks[fIndex]; }
+    Position first() override {
+        fIndex = 0;
+        return fLastResult = this->currentPosition();
+    }
+    Position current() override { return fLastResult = this->currentPosition(); }
     Position next() override {
-        if (fIndex + 1 < SkTo<Position>(fBreaks.size())) {
-            return fBreaks[++fIndex];
+        if (fIndex + 1 < this->breakCount()) {
+            return fLastResult = fBreaks[++fIndex];
         }
-        fIndex = fBreaks.size();
-        return -1;
+        return fLastResult = kDone;
     }
     Status status() override {
-        if (fIndex < SkTo<Position>(fStatuses.size())) {
+        if (fIndex >= 0 && fIndex < SkTo<Position>(fStatuses.size())) {
             return fStatuses[fIndex];
         }
         return 0;
     }
-    bool isDone() override { return fIndex >= SkTo<Position>(fBreaks.size()); }
-
+    bool isDone() override { return fLastResult == kDone; }
     Position last() override {
-        if (fBreaks.empty()) {
-            return kDone;
-        }
-        return fBreaks[(fIndex = this->lastIndex())];
+        fIndex = this->lastIndex();
+        return fLastResult = this->currentPosition();
     }
 
     Position previous() override {
-        Position index = std::min(fIndex, this->lastIndex());
-        if (index <= 0) {
-            fIndex = 0;
-            return kDone;
+        if (fIndex > 0) {
+            return fLastResult = fBreaks[--fIndex];
         }
-        return fBreaks[(fIndex = index - 1)];
+        return fLastResult = kDone;
     }
-
     Position preceding(Position offset) override {
-        // The break before the first break >= offset is the last break < offset
         auto it = std::lower_bound(fBreaks.begin(), fBreaks.end(), offset);
         if (it == fBreaks.begin()) {
             fIndex = 0;
-            return kDone;
+            return fLastResult = kDone;
         }
-        return fBreaks[(fIndex = SkTo<Position>(std::distance(fBreaks.begin(), it)) - 1)];
+        --it;
+        fIndex = SkTo<Position>(it - fBreaks.begin());
+        return fLastResult = fBreaks[fIndex];
     }
 
     Position following(Position offset) override {
+        if (offset < 0) {
+            return this->first();
+        }
         auto it = std::upper_bound(fBreaks.begin(), fBreaks.end(), offset);
         if (it == fBreaks.end()) {
-            fIndex = std::max(this->lastIndex(), 0);
-            return kDone;
+            fIndex = this->lastIndex();
+            return fLastResult = kDone;
         }
-        return fBreaks[(fIndex = SkTo<Position>(std::distance(fBreaks.begin(), it)))];
+        fIndex = SkTo<Position>(it - fBreaks.begin());
+        return fLastResult = fBreaks[fIndex];
     }
 
     bool isBoundary(Position offset) override {
-        auto it = std::lower_bound(fBreaks.begin(), fBreaks.end(), offset);
-        if (it == fBreaks.end()) {
-            fIndex = std::max(this->lastIndex(), 0);
+        if (offset < 0) {
+            this->first();
             return false;
         }
-        fIndex = SkTo<Position>(std::distance(fBreaks.begin(), it));
-        return *it == offset;
+        auto it = std::lower_bound(fBreaks.begin(), fBreaks.end(), offset);
+        if (it == fBreaks.end()) {
+            fIndex = this->lastIndex();
+        } else {
+            fIndex = SkTo<Position>(it - fBreaks.begin());
+        }
+        fLastResult = this->currentPosition();
+        return it != fBreaks.end() && *it == offset;
     }
 
     bool setText(const char utftext8[], int utf8Units) override {
@@ -210,9 +215,7 @@ public:
         // Empty inputs still emit a boundary at 0 to match ICU BreakIterator::first() and
         // SkParagraph empty-text expectations
         if (utf8Units == 0) {
-            this->addBreak(0, fType == SkUnicode::BreakType::kLines
-                                      ? SkUnicode::CodeUnitFlags::kSoftLineBreakBefore
-                                      : 0);
+            this->addBreak(0, 0);
             return true;
         }
 
@@ -231,7 +234,7 @@ public:
         }
 
         // CFStringTokenizer does not distinguish mandatory breaks from soft wrap opportunities;
-        // scan codepoints to tag positions after LF/BK characters with kHardLineBreakBefore
+        // scan codepoints to tag positions after LF/BK characters with kHardLineBreak
         if (fType == SkUnicode::BreakType::kLines) {
             fUnicode->forEachCodepoint(
                     utftext8, utf8Units, [&](SkUnichar unichar, int32_t, int32_t end, size_t) {
@@ -252,9 +255,7 @@ public:
         // Empty inputs still emit a boundary at 0 to match ICU BreakIterator::first() and
         // SkParagraph empty-text expectations
         if (utf16Units == 0) {
-            this->addBreak(0, fType == SkUnicode::BreakType::kLines
-                                      ? SkUnicode::CodeUnitFlags::kSoftLineBreakBefore
-                                      : 0);
+            this->addBreak(0, 0);
             return true;
         }
 
@@ -271,7 +272,7 @@ public:
             return false;
         }
 
-        // Tag positions immediately following UAX #14 LF/BK codepoints with kHardLineBreakBefore
+        // Tag positions immediately following UAX #14 LF/BK codepoints with kHardLineBreak
         if (fType == SkUnicode::BreakType::kLines) {
             fUnicode->forEachCodepoint(
                     utftext16, utf16Units, [&](SkUnichar unichar, int32_t, int32_t end) {
@@ -288,6 +289,7 @@ private:
         fBreaks.clear();
         fStatuses.clear();
         fIndex = 0;
+        fLastResult = 0;
     }
 
     // Maintain strictly increasing break positions and deduplicate overlapping tokenizer boundaries
@@ -298,18 +300,15 @@ private:
         }
     }
 
-    // Upgrade an existing soft break at pos to a hard break, or insert a new break carrying both
-    // hard and soft flags when CFStringTokenizer omitted the boundary
     void addHardBreak(Position pos) {
         auto it = std::lower_bound(fBreaks.begin(), fBreaks.end(), pos);
         auto idx = std::distance(fBreaks.begin(), it);
         if (it != fBreaks.end() && *it == pos) {
-            fStatuses[idx] |= SkUnicode::CodeUnitFlags::kHardLineBreakBefore;
+            fStatuses[idx] = (Status)SkUnicode::LineBreakType::kHardLineBreak;
         } else {
             fBreaks.insert(it, pos);
             fStatuses.insert(fStatuses.begin() + idx,
-                             SkUnicode::CodeUnitFlags::kHardLineBreakBefore |
-                                     SkUnicode::CodeUnitFlags::kSoftLineBreakBefore);
+                             (Status)SkUnicode::LineBreakType::kHardLineBreak);
         }
     }
 
@@ -321,15 +320,15 @@ private:
         if (fType == SkUnicode::BreakType::kLines) {
             // Line-break tokens span between wrap opportunities, so candidate breaks occur at the
             // end of each token (r.location + r.length)
-            this->addBreak(0, SkUnicode::CodeUnitFlags::kSoftLineBreakBefore);
+            this->addBreak(0, (Status)SkUnicode::LineBreakType::kSoftLineBreak);
             if (!Tokenize(str, len16, kCFStringTokenizerUnitLineBreak, loc,
                           [&](CFRange r) {
                               this->addBreak(map16(r.location + r.length),
-                                             SkUnicode::CodeUnitFlags::kSoftLineBreakBefore);
+                                             (Status)SkUnicode::LineBreakType::kSoftLineBreak);
                           })) {
                 return false;
             }
-            this->addBreak(totalUnits, SkUnicode::CodeUnitFlags::kSoftLineBreakBefore);
+            this->addBreak(totalUnits, (Status)SkUnicode::LineBreakType::kSoftLineBreak);
         } else if (fType == SkUnicode::BreakType::kGraphemes) {
             // CFStringTokenizer does not expose extended grapheme clusters; use composed character
             // ranges instead
@@ -353,7 +352,9 @@ private:
         return true;
     }
 
-    Position lastIndex() const { return SkTo<Position>(fBreaks.size()) - 1; }
+    Position currentPosition() const { return fBreaks.empty() ? 0 : fBreaks[fIndex]; }
+    Position breakCount() const { return SkTo<Position>(fBreaks.size()); }
+    Position lastIndex() const { return fBreaks.empty() ? 0 : this->breakCount() - 1; }
 
     SkUnicode* fUnicode;
     SkUnicode::BreakType fType;
@@ -361,6 +362,7 @@ private:
     std::vector<Position> fBreaks;
     std::vector<Status> fStatuses;
     Position fIndex = 0;
+    Position fLastResult = 0;
 };
 
 }  // namespace

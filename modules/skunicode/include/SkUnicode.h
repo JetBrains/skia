@@ -154,11 +154,8 @@ class SKUNICODE_API SkUnicode : public SkRefCnt {
         virtual bool isEmojiModifier(SkUnichar utf8) = 0;
         virtual bool isRegionalIndicator(SkUnichar utf8) = 0;
         virtual bool isIdeographic(SkUnichar utf8) = 0;
-        // Unicode Emoji_Presentation property
         virtual bool isEmojiPresentation(SkUnichar utf8) = 0;
-        // Unicode Extended_Pictographic property
         virtual bool isExtendedPictographic(SkUnichar utf8) = 0;
-        // General_Category P* (punctuation), like ICU u_ispunct
         virtual bool isPunctuation(SkUnichar utf8) = 0;
 
         // Unicode Bidi_Class, numbered like ICU's UCharDirection
