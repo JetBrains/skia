@@ -269,7 +269,9 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(TextureOpNearestSubsetOvershootTest,
                 SkSamplingOptions(SkFilterMode::kNearest),
                 &paint,
                 SkCanvas::kStrict_SrcRectConstraint);
-        for (int x = 0; x < 4; ++x) {
+        // Pixel 0's center lies just outside the destination rectangle. Its coverage
+        // varies with rasterization precision, so only check pixels fully inside.
+        for (int x = 1; x < 4; ++x) {
             REPORTER_ASSERT(reporter, dstSurfaceFrac->readPixels(bm, x, 0));
             REPORTER_ASSERT(reporter, bm.getColor(0, 0) == SK_ColorRED);
         }
