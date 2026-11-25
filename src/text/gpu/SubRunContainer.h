@@ -13,8 +13,10 @@
 #include "include/core/SkRect.h"
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkSpan.h"
+#include "include/private/SkOnlyStackAllocatable.h"
 #include "include/private/SkTLogic.h"
 #include "src/core/SkColorData.h"  // IWYU pragma: keep
+#include "src/partition_alloc/raw_ptr.h"
 #include "src/text/gpu/GlyphVector.h"
 #include "src/text/gpu/SubRunAllocator.h"
 #include "src/text/gpu/VertexFiller.h"
@@ -62,6 +64,7 @@ public:
 
     void flatten(SkWriteBuffer& buffer) const;
     static SubRunOwner MakeFromBuffer(SkReadBuffer& buffer,
+                                      const SkMatrix& initialPositionMatrix,
                                       sktext::gpu::SubRunAllocator* alloc,
                                       const SkStrikeClient* client);
 
@@ -72,6 +75,10 @@ public:
     // Given an already cached subRun, can this subRun handle this combination paint, matrix, and
     // position.
     virtual bool canReuse(const SkPaint& paint, const SkMatrix& positionMatrix) const = 0;
+
+    // Returns true if this SubRun draws direct masks, which are packed into the atlas without
+    // padding when atlas bilerp is unsupported.
+    virtual bool canDrawDirect() const { return false; }
 
     // Return the underlying atlas SubRun if it exists. Otherwise, return nullptr.
     // * Don't use this API. It is only to support testing.
@@ -128,6 +135,8 @@ public:
     };
     virtual GlyphParams glyphParams() const = 0;
 
+    bool canDrawDirect() const override { return fVertexFiller.canDrawDirect(); }
+
     const VertexFiller& vertexFiller() const { return fVertexFiller; }
 
     GlyphVector& glyphVector() const { return fGlyphVector; }
@@ -144,6 +153,8 @@ protected:
 class SubRunList {
 public:
     class Iterator {
+        SK_ONLY_STACK_ALLOCATABLE;
+
     public:
         using value_type = SubRun;
         using difference_type = ptrdiff_t;
@@ -175,7 +186,7 @@ public:
 
 private:
     SubRunOwner fHead{nullptr};
-    SubRunOwner* fTail{&fHead};
+    raw_ptr<SubRunOwner> fTail{&fHead};
 };
 
 // -- SubRunContainer ------------------------------------------------------------------------------
@@ -219,6 +230,7 @@ public:
 
     const SkMatrix& initialPosition() const { return fInitialPositionMatrix; }
     bool isEmpty() const { return fSubRuns.isEmpty(); }
+    bool hasDirectMaskSubRuns() const;
     bool canReuse(const SkPaint& paint, const SkMatrix& positionMatrix) const;
 
 private:

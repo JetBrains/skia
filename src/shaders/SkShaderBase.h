@@ -19,6 +19,7 @@
 #include "include/core/SkTypes.h"
 #include "include/private/SkNoncopyable.h"
 #include "include/private/SkOnlyStackAllocatable.h"
+#include "src/partition_alloc/raw_ref.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -322,7 +323,7 @@ public:
 
     protected:
         // Reference to shader, so we don't have to dupe information.
-        const SkShaderBase& fShader;
+        const raw_ref<const SkShaderBase, DanglingUntriaged> fShader;
 
         uint8_t getPaintAlpha() const { return fPaintAlpha; }
 
@@ -359,7 +360,8 @@ public:
      * in r,g MatrixRec::apply() must be called (unless the shader doesn't require it's input
      * coords). The default impl creates shadercontext and calls that (not very efficient).
      */
-    virtual bool appendStages(const SkStageRec&, const SkShaders::MatrixRec&) const = 0;
+    [[nodiscard]] virtual bool appendStages(const SkStageRec&,
+                                            const SkShaders::MatrixRec&) const = 0;
 
     virtual SkImage* onIsAImage(SkMatrix*, SkTileMode[2]) const {
         return nullptr;

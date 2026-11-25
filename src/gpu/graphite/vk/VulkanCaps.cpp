@@ -7,6 +7,7 @@
 
 #include "src/gpu/graphite/vk/VulkanCaps.h"
 
+#include "include/core/SkSpan.h"
 #include "include/core/SkTextureCompressionType.h"
 #include "include/gpu/graphite/ContextOptions.h"
 #include "include/gpu/graphite/TextureInfo.h"
@@ -160,7 +161,7 @@ void VulkanCaps::init(const ContextOptions& contextOptions,
     // These are guaranteed to be supported on Vulkan 1.0+.
     SkASSERT(deviceLimits.maxComputeWorkGroupInvocations > 0);
     SkASSERT(deviceLimits.maxPerStageDescriptorStorageBuffers > 0);
-    fComputeSupport = true;
+    fComputeSupport = false;
     fStorageBufferSupportForCompute = true;
 
     VkPhysicalDeviceMemoryProperties deviceMemoryProperties;
@@ -557,10 +558,12 @@ void VulkanCaps::getProperties(const skgpu::VulkanInterface* vkInterface,
         // pCopyDstLayouts respectively.  The GENERAL layout is required to be found in both.  Skia
         // has two use cases for this function; initialization (UNDEFINED->GENERAL) and after
         // texture updates (GENERAL->SHADER_READ_ONLY, per Recorder::update*BackendTexture).
-        props->fHicHasShaderReadOnlyDstLayout = std::find(
-                props->fHic.pCopyDstLayouts,
-                SK_UNSAFE_TODO(props->fHic.pCopyDstLayouts + props->fHic.copyDstLayoutCount),
-                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        SkSpan<const VkImageLayout> dstLayouts(props->fHic.pCopyDstLayouts,
+                                               props->fHic.copyDstLayoutCount);
+        props->fHicHasShaderReadOnlyDstLayout =
+                std::find(dstLayouts.begin(),
+                          dstLayouts.end(),
+                          VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) != dstLayouts.end();
     }
 
     // If this field is not filled, driver bug workarounds won't work correctly. It should always
@@ -668,6 +671,12 @@ void VulkanCaps::applyDriverCorrectnessWorkarounds(const PhysicalDevicePropertie
     // On Mali galaxy s7 we see lots of rendering issues when we suballocate VkImages.
     if (isARMProprietary && androidAPIVersion <= 28) {
         fShouldAlwaysUseDedicatedImageMemory = true;
+    }
+
+    if (isARMProprietary &&
+        driverVersion >= skgpu::DriverVersion(42, 0) &&
+        driverVersion < skgpu::DriverVersion(56, 0)) {
+        fSleepAfterLostDeviceWait = true;
     }
 
     // On Qualcomm the gpu resolves an area larger than the render pass bounds when using

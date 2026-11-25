@@ -1572,7 +1572,13 @@ void Device::drawAtlasSubRun(const sktext::gpu::AtlasSubRun* subRun,
     auto& glyphData = subRun->glyphVector().accessBackendData<GlyphData>();
 
     auto [bounds, maskToDevice] =
-            subRun->vertexFiller().boundsAndDeviceMatrix(localToDevice, drawOrigin);
+            subRun->vertexFiller().boundsAndDeviceMatrix(
+                    localToDevice, drawOrigin,
+                    fRecorder->priv().caps()->supportBilerpFromGlyphAtlas());
+
+    if (bounds.isEmpty()) {
+        return;
+    }
 
     for (int subRunCursor = 0; subRunCursor < subRunEnd;) {
         // For the remainder of the run, add any atlas uploads to the Recorder's TextAtlasManager
@@ -1692,10 +1698,7 @@ void Device::drawGeometry(const Transform& localToDevice,
     // Calculate the clipped bounds of the draw and determine the clip elements that affect the
     // draw without updating the clip stack.
     ClipStack::ElementList clipElements;
-    Clip clip = fClip.visitClipStackForDraw(localToDevice,
-                                            &geometry,
-                                            style,
-                                            &clipElements);
+    Clip clip = fClip.visitClipStackForDraw(localToDevice, &geometry, &style, &clipElements);
     if (clip.isClippedOut()) {
         // Clipped out, so don't record anything.
         return;
@@ -1778,8 +1781,10 @@ void Device::drawGeometry(const Transform& localToDevice,
             return;
         }
 
-        // To avoid #define mess, the sparse strips can trigger a flush here
-        // TODO (thomsmit): unify this with the existing flush system
+        // To avoid #define mess, the sparse strips can trigger a flush here.
+        // TODO (thomsmit): Unify this with the existing flush system so we don't process geometry
+        // or trigger a flush here for a pathological draw that will later be skipped in the
+        // `needsFlush` check below.
         if (fStripGenerator->hasNullCaps()) {
             fRecorder->priv().flushTrackedDevices(
                     SK_DUMP_TASKS_CODE("Device::drawGeometry Flush Before Draw"));
@@ -1802,8 +1807,26 @@ void Device::drawGeometry(const Transform& localToDevice,
     DstReadStrategy dstReadStrategy = shading.dstReadRequired() ?
                                       fDC->dstReadStrategy() : DstReadStrategy::kNoneRequired;
     // TODO (thomsmit): Adjust this when the draw limit is removed.
-    const bool needsFlush = this->needsFlushBeforeDraw(numNewRenderSteps, dstReadStrategy);
+    const bool needsFlush =
+            this->needsFlushBeforeDraw(numNewRenderSteps, clipElements, dstReadStrategy);
     if (needsFlush) {
+        // If no flush was needed, DrawListLayer only had to fit the undrawn clip elements into the
+        // current DrawList because any already-drawn clips were already recorded and accounted for
+        // in `fDC->pendingRenderSteps()` using their actual render step counts.
+        //
+        // However, flushing finalizes the current DrawPass and resets all clip elements in the
+        // stack to undrawn (since the depth attachment does not persist across DrawPasses). In the
+        // new DrawList, all `clipElements.size()` effective clips would have to be re-recorded into
+        // the same pass as the draw. If the draw and all of its effective clips conservatively
+        // require more render steps than a fresh DrawList can hold, skip the draw immediately
+        // without flushing pending work.
+        if (numNewRenderSteps + clipElements.size() * Renderer::kMaxRenderSteps >
+            DrawList::kMaxRenderSteps) {
+            SKIA_LOG_W("Skipping draw: clip stack requires too many render steps for a single "
+                       "pass.");
+            return;
+        }
+
         if (pathAtlas != nullptr) {
             // We need to flush work for all devices associated with the current Recorder.
             // Otherwise we may end up with outstanding draws that depend on past atlas state.
@@ -1873,14 +1896,8 @@ void Device::drawGeometry(const Transform& localToDevice,
     // TODO (b/540923063): Moving the pathAtlas flush prior to key extraction could allow the
     // storage context to deduplicate uploads per draw pass.
     if (pathAtlas != nullptr) {
-        Rect clippedShapeBounds = clip.transformedShapeBounds().makeIntersect(clip.scissor());
-        if (clippedShapeBounds.area() >= 0.8f * clip.transformedShapeBounds().area()) {
-            // The clip isn't excluding very much of the original shape, so store the entire path
-            // in the atlas to avoid redundant entries with slightly different clips.
-            clippedShapeBounds = clip.transformedShapeBounds();
-        }
         std::optional<CoverageMaskShape> atlasMask;
-        std::tie(renderer, atlasMask) = pathAtlas->addShape(clippedShapeBounds,
+        std::tie(renderer, atlasMask) = pathAtlas->addShape(clip,
                                                             geometry.shape(),
                                                             localToDevice,
                                                             style);
@@ -1895,7 +1912,7 @@ void Device::drawGeometry(const Transform& localToDevice,
                     SK_DUMP_TASKS_CODE("Device::drawGeometry Atlas Flush"));
 
             // Try inserting the shape again.
-            std::tie(renderer, atlasMask) = pathAtlas->addShape(clippedShapeBounds,
+            std::tie(renderer, atlasMask) = pathAtlas->addShape(clip,
                                                                 geometry.shape(),
                                                                 localToDevice,
                                                                 style);
@@ -1920,7 +1937,7 @@ void Device::drawGeometry(const Transform& localToDevice,
 
     // Determine whether or not this draw will also record an inner-fill draw. This must be done
     // before visiting the clip stack so that any clips account for both draws' Z values.
-    const bool avoidDepthMode = fRecorder->priv().caps()->avoidDepthMode();
+    const bool avoidDepthMode = fDC->avoidDepth();
     fCurrentDepth = fCurrentDepth.next();
     DrawOrder order(fCurrentDepth);
     Rect innerFillBounds = Rect::InfiniteInverted();
@@ -2056,7 +2073,7 @@ void Device::drawClipShape(const Transform& localToDevice,
 
     // This call represents one of the deferred clip shapes that's already pessimistically counted
     // in needsFlushBeforeDraw(), so the DrawContext should have room to add it.
-    SkASSERT(fDC->pendingRenderSteps() + renderer->numRenderSteps() < DrawList::kMaxRenderSteps);
+    SkASSERT(fDC->pendingRenderSteps() + renderer->numRenderSteps() <= DrawList::kMaxRenderSteps);
 
     // Anti-aliased clipping requires the renderer to use MSAA to modify the depth per sample, so
     // analytic coverage renderers cannot be used.
@@ -2094,6 +2111,8 @@ std::pair<DrawParams*, Layer*> Device::drawClipShapeImmediate(const Transform& l
         SKIA_LOG_W("Skipping clip with no supported path renderer.");
         return {nullptr, {}};
     }
+
+    SkASSERT(fDC->pendingRenderSteps() + renderer->numRenderSteps() <= DrawList::kMaxRenderSteps);
 
     if (localToDevice.type() == Transform::Type::kPerspective) {
         SkPath devicePath = shape.asPath().makeTransform(localToDevice.matrix().asM33());
@@ -2404,9 +2423,16 @@ void Device::internalFlush() {
     fRecorder->priv().compactAtlasProvider();
 }
 
-bool Device::needsFlushBeforeDraw(int numNewRenderSteps, DstReadStrategy dstReadStrategy) {
+bool Device::needsFlushBeforeDraw(int numNewRenderSteps,
+                                  SkSpan<const ClipStack::Element* const> clipElements,
+                                  DstReadStrategy dstReadStrategy) {
     // Must also account for the elements in the clip stack that might need to be recorded.
-    numNewRenderSteps += fClip.maxDeferredClipDraws() * Renderer::kMaxRenderSteps;
+    // When using DrawListLayer, clip elements are recorded immediately on first use so already-
+    // drawn clip elements are already accounted for in fDC->pendingRenderSteps().
+    int clipElementsToRecord = fRecorder->priv().caps()->useDrawListLayer()
+                                       ? ClipStack::CountPendingElementDraws(clipElements)
+                                       : fClip.maxDeferredClipDraws();
+    numNewRenderSteps += clipElementsToRecord * Renderer::kMaxRenderSteps;
     bool needsFlush =
             // Need flush if we don't have room to record into the current list.
             (DrawList::kMaxRenderSteps - fDC->pendingRenderSteps()) < numNewRenderSteps ||
@@ -2457,10 +2483,8 @@ void Device::drawCoverageMask(const SkSpecialImage* mask,
                               const SkMatrix& maskToDevice,
                               const SkSamplingOptions& sampling,
                               const SkPaint& paint) {
-    CoverageMaskShape::MaskInfo maskInfo{/*fTextureOrigin=*/{SkTo<uint16_t>(mask->subset().fLeft),
-                                                             SkTo<uint16_t>(mask->subset().fTop)},
-                                         /*fMaskSize=*/{SkTo<uint16_t>(mask->width()),
-                                                        SkTo<uint16_t>(mask->height())}};
+    CoverageMaskShape::MaskInfo maskInfo{/*fTextureOrigin=*/mask->subset().topLeft(),
+                                         /*fMaskSize=*/mask->dimensions()};
 
     auto maskProxyView = AsView(mask->asImage());
     if (!maskProxyView) {
@@ -2556,6 +2580,10 @@ sk_sp<sktext::gpu::Slug> Device::convertGlyphRunListToSlug(const sktext::GlyphRu
 
 void Device::drawSlug(SkCanvas* canvas, const sktext::gpu::Slug* slug, const SkPaint& paint) {
     auto slugImpl = static_cast<const sktext::gpu::SlugImpl*>(slug);
+    if (!slugImpl->canDraw(this->localToDevice(),
+                           fRecorder->priv().caps()->supportBilerpFromGlyphAtlas())) {
+        return;
+    }
     slugImpl->subRuns()->draw(canvas, slugImpl->origin(), paint, slugImpl, this->atlasDelegate());
 }
 
@@ -2570,34 +2598,42 @@ bool Device::drawBlurredRRect(const SkRRect& rrect, const SkPaint& paint,
     if (paint.isAntiAlias()) {
         rrectToBlur = rrect;
     } else {
-        // Snap the the rounded rectangle to pixel edges to match the behavior of
-        // Device::drawRRect() for non-AA blurs when the AnalyticBlurMask approach isn't supported.
-        rrectToBlur = SkRRect::MakeRectRadii(snap_rect_to_pixels(this->localToDeviceTransform(),
-                                                                 rrect.rect()).asSkRect(),
-                                             rrect.radii().data());
+        // Snaps the rrect to pixels the same way as the image filter fallback for blurs does,
+        // snapping based on the blur layer's transform. If we don't have rotation, we can snap
+        // with the translation applied, else we only apply the scale and snap.
+        // See skif::Mapping::decomposeCTM().
+        const SkMatrix& matrix = this->localToDevice();
+        Rect snappedRect = rrect.rect();
+        SkSize layerScale;
+        if (matrix.isScaleTranslate()) {
+            snappedRect = snap_rect_to_pixels(this->localToDeviceTransform(), snappedRect);
+        } else {
+            // Analytic blurring doesn't support the perspective case.
+            SkAssertResult(matrix.decomposeScale(&layerScale, nullptr));
+            snappedRect = snap_rect_to_pixels(
+                    Transform(SkM44::Scale(layerScale.width(), layerScale.height())), snappedRect);
+        }
+        rrectToBlur = SkRRect::MakeRectRadii(snappedRect.asSkRect(), rrect.radii().data());
     }
 
+#if defined(SK_SUPPORT_LEGACY_GRAPHITE_RRECT_BLUR)
     std::optional<AnalyticBlurMask> analyticBlur = AnalyticBlurMask::Make(
             this->recorder(), this->localToDeviceTransform(), deviceSigma, rrectToBlur);
     if (!analyticBlur) {
-#if !defined(SK_SUPPORT_LEGACY_GRAPHITE_RRECT_BLUR)
-        // Try using the analytic rrect blur specific mask.
-        std::optional<AnalyticRRectBlurMask> analyticRRectBlur = AnalyticRRectBlurMask::Make(
-                this->recorder(), this->localToDeviceTransform(), localSigma, rrectToBlur);
-        if (analyticRRectBlur) {
-            this->drawGeometry(this->localToDeviceTransform(),
-                               Geometry(*analyticRRectBlur),
-                               PaintParams(paint),
-                               SkStrokeRec(paint));
-            return true;
-        }
-#endif
-
         return false;
     }
+    Geometry geometry = Geometry(*analyticBlur);
+#else
+    std::optional<AnalyticRRectBlurMask> analyticRRectBlur = AnalyticRRectBlurMask::Make(
+            this->recorder(), this->localToDeviceTransform(), localSigma, rrectToBlur);
+    if (!analyticRRectBlur) {
+        return false;
+    }
+    Geometry geometry = Geometry(*analyticRRectBlur);
+#endif
 
     this->drawGeometry(this->localToDeviceTransform(),
-                       Geometry(*analyticBlur),
+                       std::move(geometry),
                        PaintParams(paint),
                        SkStrokeRec(paint));
     return true;
